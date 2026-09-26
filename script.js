@@ -41,6 +41,106 @@
         POST   /api/chatbot                 { message, role }
         GET    /api/stats/overview          (member/province counts)
    4. A minimal fetch() example (see also apiRequest() helper below):
+// ════════════════════════════════════════════════
+// SUPABASE API INITIALIZATION
+// ════════════════════════════════════════════════
+// Replace these strings with your actual Supabase Project URL and Anon Key
+const SUPABASE_URL = 'https://xszowbctpuqbszagzdwa.supabase.co/rest/v1/'; 
+const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inhzem93YmN0cHVxYnN6YWd6ZHdhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODk5NTcyOTMsImV4cCI6MjEwNTUzMzI5M30.oeNCiiRMqnyDWzrwoE5AJldK_83UiqU728aLUk_xdrQ';
+
+// Initialize the client so the rest of your app can talk to the database
+const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+
+
+const SUPABASE_URL = 'https://xszowbctpuqbszagzdwa.supabase.co/rest/v1/'; 
+const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inhzem93YmN0cHVxYnN6YWd6ZHdhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODk5NTcyOTMsImV4cCI6MjEwNTUzMzI5M30.oeNCiiRMqnyDWzrwoE5AJldK_83UiqU728aLUk_xdrQ';
+const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+async function handleRegister() {
+  const fullName   = document.getElementById('r-fullname').value.trim();
+  const email      = document.getElementById('r-email').value.trim();
+  const pass       = document.getElementById('r-pass').value;
+  const province   = document.getElementById('r-province').value;
+  const department = document.getElementById('r-department').value.trim(); // Must match ENUM exactly (e.g., 'Recruitment')
+
+  try {
+    const nameParts = fullName.split(' ');
+    const firstName = nameParts[0];
+    const lastName  = nameParts.slice(1).join(' ') || firstName;
+
+    // 1. Create the user securely in Supabase Auth
+    const { data: authData, error: authError } = await supabase.auth.signUp({
+      email: email,
+      password: pass
+    });
+    if (authError) throw authError;
+
+    // 2. Save their profile details to your custom users table
+    const { error: dbError } = await supabase.from('users').insert([{
+      user_id: authData.user.id,
+      email: email,
+      role: 'MEMBER',
+      first_name: firstName,
+      last_name: lastName,
+      province: province,
+      department_or_expertise: department || 'Recruitment',
+      account_status: 'Active'
+    }]);
+    if (dbError) throw dbError;
+
+    alert('Account created! Sign in to continue.');
+  } catch (err) {
+    console.error(err);
+    alert(err.message || 'Registration failed.');
+  }
+}
+
+// Login Function
+async function doLogin() {
+  const email = document.getElementById('l-cred').value.trim();
+  const pass  = document.getElementById('l-pass').value;
+
+  try {
+    // 1. Authenticate credentials
+    const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
+      email: email,
+      password: pass
+    });
+    if (authError) throw authError;
+
+    // 2. Fetch role and permissions from the users table
+    const { data: userProfile, error: profileError } = await supabase
+      .from('users')
+      .select('*')
+      .eq('user_id', authData.user.id)
+      .single();
+
+    if (profileError || !userProfile) throw new Error('Profile not found.');
+
+    // Route based on role
+    if (userProfile.role === 'HR_ADMIN') {
+      console.log("Welcome to Admin Dashboard");
+      // Load admin view
+    } else {
+      console.log("Welcome to Member Dashboard");
+      // Load member view
+    }
+  } catch (err) {
+    console.error(err);
+    alert('Invalid credentials or login failed.');
+  }
+}
+
+
+// ════════════════════════════════════════════════
+// DUMMY DATA (You will gradually replace these)
+// ════════════════════════════════════════════════
+const DUMMY_USERS = {
+  members: [
+    { credential: 'maria@hrcalabarzon.ph', password: 'password123', id: 'HRC-2024-0847', name: 'Maria Santos', initials: 'MS' }
+  ],
+// ... rest of your script.js code ...
 
         async function apiLogin(credential, password) {
           const res = await fetch('/api/auth/login', {
@@ -177,59 +277,58 @@ function detectCredential(val) {
   }
 }
 
-function doLogin() {
-  const cred = document.getElementById('l-cred').value.trim();
-  const p    = document.getElementById('l-pass').value;
-  const err  = document.getElementById('login-err');
 
+async function doLogin() {
+  const cred = document.getElementById('l-cred').value.trim();
+  const pass = document.getElementById('l-pass').value;
+  const err  = document.getElementById('login-err');
+  
   err.style.display = 'none';
 
-  if (!cred || !p) {
-    showLoginErr('Please enter your ' + (currentRole === 'admin' ? 'Admin ID' : 'email address') + ' and password.');
-    return;
-  }
-  if (currentRole === 'member' && !cred.includes('@')) {
-    showLoginErr('Please enter a valid email address. Admin IDs use the format ADM-YYYY-NNNN.');
-    return;
-  }
-  if (currentRole === 'admin' && !isAdminId(cred)) {
-    showLoginErr('Admin ID format is invalid. Expected format: ADM-YYYY-NNNN (e.g. ADM-2025-0001).');
+  if (!cred || !pass) {
+    showLoginErr('Please enter your credentials.');
     return;
   }
 
   const btn = document.getElementById('login-btn');
   const origText = btn.textContent;
-  btn.textContent = 'Signing in...'; btn.disabled = true;
+  btn.textContent = 'Signing in...'; 
+  btn.disabled = true;
 
-  // ──────────────────────────────────────────────
-  // BACKEND HOOK: replace this whole block with a real login call:
-  //
-  //   apiRequest('/auth/login', {
-  //     method: 'POST',
-  //     body: JSON.stringify({ credential: cred, password: p })
-  //   }).then(data => {
-  //     authToken = data.token;      // store the session token
-  //     loggedInUser = data.user;
-  //     currentRole = data.role;     // 'member' | 'admin'
-  //     enterApp();
-  //   }).catch(() => showLoginErr('Invalid credentials.'));
-  //
-  // For now we just check the DUMMY_USERS table above.
-  // ──────────────────────────────────────────────
-  setTimeout(() => {
-    btn.textContent = origText; btn.disabled = false;
+  try {
+    // 1. Authenticate with Supabase
+    const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
+      email: cred,
+      password: pass
+    });
+    if (authError) throw authError;
 
-    const pool = currentRole === 'admin' ? DUMMY_USERS.admins : DUMMY_USERS.members;
-    const match = pool.find(u => u.credential.toLowerCase() === cred.toLowerCase() && u.password === p);
+    // 2. Get the user's role and details from your database
+    const { data: userProfile, error: profileError } = await supabase
+      .from('users')
+      .select('*')
+      .eq('user_id', authData.user.id)
+      .single();
 
-    if (!match) {
-      showLoginErr('Incorrect credentials. Try the demo login shown below the form.');
-      return;
-    }
+    if (profileError || !userProfile) throw new Error('User profile not found in database.');
 
-    loggedInUser = match;
+    // 3. Set the active session data
+    loggedInUser = {
+      id: userProfile.user_id,
+      name: `${userProfile.first_name} ${userProfile.last_name}`,
+      initials: `${userProfile.first_name[0]}${userProfile.last_name[0]}`.toUpperCase(),
+      role: userProfile.role,
+      province: userProfile.province
+    };
+
+    currentRole = userProfile.role === 'HR_ADMIN' ? 'admin' : 'member';
     enterApp();
-  }, 800);
+  } catch (err) {
+    showLoginErr(err.message || 'Invalid credentials.');
+  } finally {
+    btn.textContent = origText; 
+    btn.disabled = false;
+  }
 }
 
 function enterApp() {
@@ -312,28 +411,21 @@ function showRegisterErr(msg) {
   const el = document.getElementById('register-err');
   el.textContent = msg; el.style.display = 'block';
 }
-function handleRegister() {
-  const fullName    = document.getElementById('r-fullname').value.trim();
-  const email       = document.getElementById('r-email').value.trim();
-  const pass        = document.getElementById('r-pass').value;
-  const pass2       = document.getElementById('r-pass2').value;
-  const province    = document.getElementById('r-province').value;
-  const company     = document.getElementById('r-company').value.trim();
-  const department  = document.getElementById('r-department').value.trim();
-  const position    = document.getElementById('r-position').value.trim();
+
+async function handleRegister() {
+  const fullName   = document.getElementById('r-fullname').value.trim();
+  const email      = document.getElementById('r-email').value.trim();
+  const pass       = document.getElementById('r-pass').value;
+  const pass2      = document.getElementById('r-pass2').value;
+  const province   = document.getElementById('r-province').value;
+  const company    = document.getElementById('r-company').value.trim();
+  const department = document.getElementById('r-department').value.trim();
+  const position   = document.getElementById('r-position').value.trim();
 
   document.getElementById('register-err').style.display = 'none';
 
-  if (!fullName || !email || !pass || !pass2 || !province || !company || !department || !position) {
-    showRegisterErr('Please fill in all fields.');
-    return;
-  }
-  if (!email.includes('@')) {
-    showRegisterErr('Please enter a valid email address.');
-    return;
-  }
-  if (pass.length < 6) {
-    showRegisterErr('Password must be at least 6 characters.');
+  if (!fullName || !email || !pass || !pass2 || !province) {
+    showRegisterErr('Please fill in all required fields.');
     return;
   }
   if (pass !== pass2) {
@@ -343,43 +435,44 @@ function handleRegister() {
 
   const btn = document.getElementById('register-btn');
   const origText = btn.textContent;
-  btn.textContent = 'Creating account...'; btn.disabled = true;
+  btn.textContent = 'Creating account...'; 
+  btn.disabled = true;
 
-  // ──────────────────────────────────────────────
-  // BACKEND HOOK: replace this whole block with a real registration call:
-  //
-  //   apiRequest('/auth/register', {
-  //     method: 'POST',
-  //     body: JSON.stringify({ fullName, email, password: pass, province, company, department, position })
-  //   }).then(() => {
-  //     showLoginPage();
-  //     showToast('Account created! Sign in to continue.', 'success');
-  //   }).catch(() => showRegisterErr('Registration failed. Please try again.'));
-  //
-  // For now we just simulate a short delay and add the new account to the
-  // in-memory DUMMY_USERS table so it could (in a real backend) be used to
-  // log in immediately after.
-  // ──────────────────────────────────────────────
-  setTimeout(() => {
-    btn.textContent = origText; btn.disabled = false;
+  try {
+    const nameParts = fullName.split(' ');
+    const firstName = nameParts[0];
+    const lastName  = nameParts.slice(1).join(' ') || firstName;
 
-    DUMMY_USERS.members.push({
-      credential: email,
-      password: pass,
-      id: `HRC-2025-${String(1000 + DUMMY_USERS.members.length)}`,
-      name: fullName,
-      initials: fullName.split(' ').filter(Boolean).map(w => w[0]).join('').slice(0, 2).toUpperCase() || 'ME'
+    // 1. Create the user in Supabase Auth
+    const { data: authData, error: authError } = await supabase.auth.signUp({
+      email: email,
+      password: pass
     });
+    if (authError) throw authError;
 
-    ['r-fullname','r-email','r-pass','r-pass2','r-company','r-department','r-position'].forEach(id => {
-      document.getElementById(id).value = '';
-    });
-    document.getElementById('r-province').value = '';
+    // 2. Save their profile to your custom users table
+    const { error: dbError } = await supabase.from('users').insert([{
+      user_id: authData.user.id,
+      email: email,
+      role: 'MEMBER',
+      first_name: firstName,
+      last_name: lastName,
+      province: province,
+      department_or_expertise: department || 'Recruitment',
+      account_status: 'Active'
+    }]);
+    if (dbError) throw dbError;
 
     showLoginPage();
-    showToast(`Account created! Sign in as ${fullName.split(' ')[0]} to continue.`, 'success', 4000);
-  }, 900);
+    showToast('Account created! Sign in to continue.', 'success', 4000);
+  } catch (err) {
+    showRegisterErr(err.message || 'Registration failed.');
+  } finally {
+    btn.textContent = origText; 
+    btn.disabled = false;
+  }
 }
+
 
 // ════════════════════════════════════════════════
 // MEMBER NAVIGATION
