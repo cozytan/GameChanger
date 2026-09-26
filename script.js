@@ -1,202 +1,9 @@
-/* ════════════════════════════════════════════════════════════════
-   GameChanger — HR Calabarzon
-   script.js — all behavior lives here.
-
-   HOW THE 3 FILES CONNECT
-   ────────────────────────
-   index.html  <link rel="stylesheet" href="style.css">   (styling)
-   index.html  <script src="script.js"></script>          (this file)
-   Every onclick="..." attribute in index.html calls a function
-   defined in this file. Every id="..." referenced below with
-   document.getElementById(...) must exist in index.html.
-
-   ════════════════════════════════════════════════════════════════
-   🔌 BACKEND / DATABASE INTEGRATION — READ ME FIRST
-   ════════════════════════════════════════════════════════════════
-   This file currently runs entirely on DUMMY DATA (the objects/arrays
-   in the "DUMMY DATA" section below) so the whole app works offline,
-   with no server. To connect a real backend + database:
-
-   1. Create an API layer (e.g. a small Express/Django/Laravel app,
-      or Firebase/Supabase) that exposes REST or GraphQL endpoints.
-   2. Replace the dummy arrays with fetch() calls to that API.
-      Search this file for "BACKEND HOOK" — every one marks an
-      exact spot where a fetch() call should replace dummy logic.
-   3. Typical endpoints this UI would need:
-        POST   /api/auth/login              { credential, password }
-        POST   /api/auth/logout
-        GET    /api/members                 (paginated list)
-        POST   /api/members                 (add member)
-        GET    /api/members/:id
-        GET    /api/sessions                (upcoming/past/draft)
-        POST   /api/sessions                (create session)
-        PUT    /api/sessions/:id            (edit session)
-        DELETE /api/sessions/:id            (cancel session)
-        POST   /api/sessions/:id/attendance-csv   (multipart upload)
-        POST   /api/sessions/:id/certificates     (generate certs)
-        GET    /api/members/:id/certificates
-        GET    /api/payments
-        POST   /api/payments/:id/mark-paid
-        POST   /api/payments/:id/waive
-        POST   /api/chatbot                 { message, role }
-        GET    /api/stats/overview          (member/province counts)
-   4. A minimal fetch() example (see also apiRequest() helper below):
-// ════════════════════════════════════════════════
-// SUPABASE API INITIALIZATION
-// ════════════════════════════════════════════════
-// Replace these strings with your actual Supabase Project URL and Anon Key
-const SUPABASE_URL = 'https://xszowbctpuqbszagzdwa.supabase.co/rest/v1/'; 
-const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inhzem93YmN0cHVxYnN6YWd6ZHdhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODk5NTcyOTMsImV4cCI6MjEwNTUzMzI5M30.oeNCiiRMqnyDWzrwoE5AJldK_83UiqU728aLUk_xdrQ';
-
-// Initialize the client so the rest of your app can talk to the database
+const SUPABASE_URL = 'https://YOUR_PROJECT_ID.supabase.co';
+const SUPABASE_ANON_KEY = 'YOUR_ANON_KEY_HERE';
 const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
-
-
-
-const SUPABASE_URL = 'https://xszowbctpuqbszagzdwa.supabase.co/rest/v1/'; 
-const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inhzem93YmN0cHVxYnN6YWd6ZHdhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODk5NTcyOTMsImV4cCI6MjEwNTUzMzI5M30.oeNCiiRMqnyDWzrwoE5AJldK_83UiqU728aLUk_xdrQ';
-const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
-
-async function handleRegister() {
-  const fullName   = document.getElementById('r-fullname').value.trim();
-  const email      = document.getElementById('r-email').value.trim();
-  const pass       = document.getElementById('r-pass').value;
-  const province   = document.getElementById('r-province').value;
-  const department = document.getElementById('r-department').value.trim(); // Must match ENUM exactly (e.g., 'Recruitment')
-
-  try {
-    const nameParts = fullName.split(' ');
-    const firstName = nameParts[0];
-    const lastName  = nameParts.slice(1).join(' ') || firstName;
-
-    // 1. Create the user securely in Supabase Auth
-    const { data: authData, error: authError } = await supabase.auth.signUp({
-      email: email,
-      password: pass
-    });
-    if (authError) throw authError;
-
-    // 2. Save their profile details to your custom users table
-    const { error: dbError } = await supabase.from('users').insert([{
-      user_id: authData.user.id,
-      email: email,
-      role: 'MEMBER',
-      first_name: firstName,
-      last_name: lastName,
-      province: province,
-      department_or_expertise: department || 'Recruitment',
-      account_status: 'Active'
-    }]);
-    if (dbError) throw dbError;
-
-    alert('Account created! Sign in to continue.');
-  } catch (err) {
-    console.error(err);
-    alert(err.message || 'Registration failed.');
-  }
-}
-
-// Login Function
-async function doLogin() {
-  const email = document.getElementById('l-cred').value.trim();
-  const pass  = document.getElementById('l-pass').value;
-
-  try {
-    // 1. Authenticate credentials
-    const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
-      email: email,
-      password: pass
-    });
-    if (authError) throw authError;
-
-    // 2. Fetch role and permissions from the users table
-    const { data: userProfile, error: profileError } = await supabase
-      .from('users')
-      .select('*')
-      .eq('user_id', authData.user.id)
-      .single();
-
-    if (profileError || !userProfile) throw new Error('Profile not found.');
-
-    // Route based on role
-    if (userProfile.role === 'HR_ADMIN') {
-      console.log("Welcome to Admin Dashboard");
-      // Load admin view
-    } else {
-      console.log("Welcome to Member Dashboard");
-      // Load member view
-    }
-  } catch (err) {
-    console.error(err);
-    alert('Invalid credentials or login failed.');
-  }
-}
-
-
-// ════════════════════════════════════════════════
-// DUMMY DATA (You will gradually replace these)
-// ════════════════════════════════════════════════
-const DUMMY_USERS = {
-  members: [
-    { credential: 'maria@hrcalabarzon.ph', password: 'password123', id: 'HRC-2024-0847', name: 'Maria Santos', initials: 'MS' }
-  ],
-// ... rest of your script.js code ...
-
-        async function apiLogin(credential, password) {
-          const res = await fetch('/api/auth/login', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ credential, password })
-          });
-          if (!res.ok) throw new Error('Login failed');
-          return res.json(); // { token, role, user }
-        }
-
-   5. Swap localStorage-free in-memory arrays (membersData,
-      sessionsData, paymentsData, certData) for data fetched on
-      page load, and re-render the relevant table/grid after every
-      create/update/delete instead of mutating the array directly.
-   ════════════════════════════════════════════════════════════════ */
-
-
-// ════════════════════════════════════════════════
-// GENERIC API HELPER (currently unused by default —
-// wire it up once a real backend exists)
-// ════════════════════════════════════════════════
-const API_BASE_URL = '/api'; // BACKEND HOOK: point this at your real API host
-
-async function apiRequest(path, options = {}) {
-  // BACKEND HOOK: this is the single place to add auth headers,
-  // e.g. 'Authorization': `Bearer ${authToken}`
-  const res = await fetch(API_BASE_URL + path, {
-    headers: { 'Content-Type': 'application/json' },
-    ...options
-  });
-  if (!res.ok) throw new Error(`API error ${res.status} on ${path}`);
-  return res.json();
-}
-
-
-// ════════════════════════════════════════════════
-// DUMMY DATA
-// Replace each of these with data loaded from your
-// backend (see BACKEND HOOK comments near each use).
-// ════════════════════════════════════════════════
-
-// Login credentials for the demo. In production, authentication
-// happens on the server — never ship real passwords to the client.
-const DUMMY_USERS = {
-  members: [
-    { credential: 'maria@hrcalabarzon.ph', password: 'password123', id: 'HRC-2024-0847', name: 'Maria Santos', initials: 'MS' }
-  ],
-  admins: [
-    { credential: 'ADM-2025-0001', password: 'password123', id: 'ADM-2025-0001', name: 'Juan Dela Cruz', initials: 'JD' }
-  ]
-};
 
 const statsData = { members: '17k+', provinces: 5, tracks: 7 };
 
-// BACKEND HOOK: GET /api/members?page=1&pageSize=20
 let membersData = [
   { name:'Maria Santos', initials:'MS', color:'blue', id:'HRC-2024-0847', province:'Cavite', expertise:'Recruitment', expertiseBadge:'bg-t', level:'Entry', levelBadge:'bg-y', attendance:72, certs:4, status:'Active' },
   { name:'Jose Padilla', initials:'JP', color:'green', id:'HRC-2024-0612', province:'Laguna', expertise:'Compliance', expertiseBadge:'bg-b', level:'Mid', levelBadge:'bg-b', attendance:88, certs:9, status:'Active' },
@@ -204,7 +11,6 @@ let membersData = [
   { name:'Rico Cruz', initials:'RC', color:'yellow', id:'HRC-2024-1102', province:'Rizal', expertise:'HRIS', expertiseBadge:'bg-t', level:'Entry', levelBadge:'bg-y', attendance:60, certs:2, status:'Inactive' }
 ];
 
-// BACKEND HOOK: GET /api/members/:id/certificates
 const certData = [
   { title:'Digital Onboarding for HR Practitioners', short:'Digital Onboarding', date:'April 2, 2025', dateShort:'Apr 2, 2025', acc:'PHRCI Accredited', accShort:'PHRCI', bg:'linear-gradient(135deg,#1565C0,#0D47A1)', seal:'🏆' },
   { title:'DOLE Compliance Workshop 2025', short:'DOLE Compliance', date:'March 10, 2025', dateShort:'Mar 10, 2025', acc:'DOLE Accredited', accShort:'DOLE', bg:'linear-gradient(135deg,#B71C1C,#E53935)', seal:'🏅' },
@@ -212,21 +18,12 @@ const certData = [
   { title:'Recruitment Basics Mastery 2024', short:'Recruitment Mastery', date:'December 5, 2024', dateShort:'Dec 5, 2024', acc:'PHRCI Accredited', accShort:'PHRCI', bg:'linear-gradient(135deg,#4A148C,#6A1B9A)', seal:'⭐' }
 ];
 
-// BACKEND HOOK: GET /api/sessions?status=upcoming|past|draft
 let sessionsData = { upcoming: 2, past: 22, draft: 1 };
-
-// ════════════════════════════════════════════════
-// STATE
-// ════════════════════════════════════════════════
-let currentRole = 'member'; // auto-detected from credential format
+let currentRole = 'member';
 let botOpen = false;
 let countdown = 2*3600 + 34*60 + 15;
 let loggedInUser = null;
 
-// ════════════════════════════════════════════════
-// TOAST — lightweight non-blocking notifications
-// (used instead of alert() throughout this file)
-// ════════════════════════════════════════════════
 function showToast(msg, type = 'info', duration = 3200) {
   const wrap = document.getElementById('toast-wrap');
   if (!wrap) { console.log(`[${type}] ${msg}`); return; }
@@ -237,11 +34,6 @@ function showToast(msg, type = 'info', duration = 3200) {
   setTimeout(() => el.remove(), duration);
 }
 
-// ════════════════════════════════════════════════
-// LOGIN — smart credential detection
-// Admin ID format:  ADM-YYYY-NNNN  (e.g. ADM-2025-0001)
-// Member format:    email address  (e.g. name@domain.com)
-// ════════════════════════════════════════════════
 function isAdminId(val) {
   return /^ADM-\d{4}-\d{4}$/i.test(val.trim());
 }
@@ -277,7 +69,6 @@ function detectCredential(val) {
   }
 }
 
-
 async function doLogin() {
   const cred = document.getElementById('l-cred').value.trim();
   const pass = document.getElementById('l-pass').value;
@@ -296,14 +87,27 @@ async function doLogin() {
   btn.disabled = true;
 
   try {
-    // 1. Authenticate with Supabase
+    let loginEmail = cred;
+    if (currentRole === 'admin') {
+      if (cred === 'ADM-2025-0001') {
+        loginEmail = 'admin@hrcalabarzon.ph';
+      } else {
+        throw new Error('Invalid Admin ID.');
+      }
+    }
+
     const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
-      email: cred,
+      email: loginEmail,
       password: pass
     });
     if (authError) throw authError;
 
-    // 2. Get the user's role and details from your database
+    if (currentRole === 'admin') {
+      loggedInUser = { id: cred, name: 'Juan Dela Cruz', initials: 'JD', role: 'HR_ADMIN' };
+      enterApp();
+      return;
+    }
+
     const { data: userProfile, error: profileError } = await supabase
       .from('users')
       .select('*')
@@ -312,7 +116,6 @@ async function doLogin() {
 
     if (profileError || !userProfile) throw new Error('User profile not found in database.');
 
-    // 3. Set the active session data
     loggedInUser = {
       id: userProfile.user_id,
       name: `${userProfile.first_name} ${userProfile.last_name}`,
@@ -321,7 +124,6 @@ async function doLogin() {
       province: userProfile.province
     };
 
-    currentRole = userProfile.role === 'HR_ADMIN' ? 'admin' : 'member';
     enterApp();
   } catch (err) {
     showLoginErr(err.message || 'Invalid credentials.');
@@ -365,7 +167,6 @@ function switchToLogin() {
   botOpen = false;
   document.getElementById('bot-panel').classList.remove('open');
   loggedInUser = null;
-  // BACKEND HOOK: also call POST /api/auth/logout and clear authToken here.
 
   currentRole = 'member';
   const credEl = document.getElementById('l-cred');
@@ -384,18 +185,32 @@ function todayStr() {
   return new Date().toLocaleDateString('en-PH',{weekday:'long',year:'numeric',month:'long',day:'numeric'});
 }
 
-function handleForgotPassword() {
-  // BACKEND HOOK: POST /api/auth/forgot-password { email }
-  showToast('Password reset link sent to your registered email.', 'success');
+async function handleForgotPassword() {
+  const email = document.getElementById('l-cred').value.trim();
+  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  
+  if (!email || !emailRegex.test(email)) {
+    showToast('Please enter a valid email address in the field first.', 'error');
+    return;
+  }
+
+  showToast('Sending reset link...', 'info');
+
+  const { error } = await supabase.auth.resetPasswordForEmail(email, {
+    redirectTo: window.location.origin,
+  });
+
+  if (error) {
+    showToast(`Error: ${error.message}`, 'error');
+  } else {
+    showToast('Password reset link sent! Check your inbox.', 'success', 5000);
+  }
 }
+
 function handleLinkedInLogin() {
-  // BACKEND HOOK: kick off OAuth flow, e.g. window.location = '/api/auth/linkedin'
   showToast('Redirecting to LinkedIn sign-in...', 'info');
 }
 
-// ════════════════════════════════════════════════
-// REGISTRATION
-// ════════════════════════════════════════════════
 function showRegisterPage() {
   document.getElementById('login-page').style.display = 'none';
   document.getElementById('register-page').style.display = 'flex';
@@ -418,14 +233,18 @@ async function handleRegister() {
   const pass       = document.getElementById('r-pass').value;
   const pass2      = document.getElementById('r-pass2').value;
   const province   = document.getElementById('r-province').value;
-  const company    = document.getElementById('r-company').value.trim();
   const department = document.getElementById('r-department').value.trim();
-  const position   = document.getElementById('r-position').value.trim();
-
+  
   document.getElementById('register-err').style.display = 'none';
+
+  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
   if (!fullName || !email || !pass || !pass2 || !province) {
     showRegisterErr('Please fill in all required fields.');
+    return;
+  }
+  if (!emailRegex.test(email)) {
+    showRegisterErr('Please enter a valid, real email address format.');
     return;
   }
   if (pass !== pass2) {
@@ -435,7 +254,7 @@ async function handleRegister() {
 
   const btn = document.getElementById('register-btn');
   const origText = btn.textContent;
-  btn.textContent = 'Creating account...'; 
+  btn.textContent = 'Creating account...';
   btn.disabled = true;
 
   try {
@@ -443,14 +262,12 @@ async function handleRegister() {
     const firstName = nameParts[0];
     const lastName  = nameParts.slice(1).join(' ') || firstName;
 
-    // 1. Create the user in Supabase Auth
     const { data: authData, error: authError } = await supabase.auth.signUp({
       email: email,
       password: pass
     });
     if (authError) throw authError;
 
-    // 2. Save their profile to your custom users table
     const { error: dbError } = await supabase.from('users').insert([{
       user_id: authData.user.id,
       email: email,
@@ -464,19 +281,15 @@ async function handleRegister() {
     if (dbError) throw dbError;
 
     showLoginPage();
-    showToast('Account created! Sign in to continue.', 'success', 4000);
+    showToast('Account registered! Check your email inbox to verify before logging in.', 'success', 6000);
   } catch (err) {
     showRegisterErr(err.message || 'Registration failed.');
   } finally {
-    btn.textContent = origText; 
+    btn.textContent = origText;
     btn.disabled = false;
   }
 }
 
-
-// ════════════════════════════════════════════════
-// MEMBER NAVIGATION
-// ════════════════════════════════════════════════
 function mShowPage(p) {
   document.querySelectorAll('#member-app .page').forEach(x=>x.classList.remove('active'));
   document.querySelectorAll('#member-app .nav-item').forEach(x=>x.classList.remove('active'));
@@ -487,9 +300,6 @@ function mShowPage(p) {
   window.scrollTo(0,0);
 }
 
-// ════════════════════════════════════════════════
-// ADMIN NAVIGATION
-// ════════════════════════════════════════════════
 function aShowPage(p) {
   document.querySelectorAll('#admin-app .page').forEach(x=>x.classList.remove('active'));
   document.querySelectorAll('#admin-app .nav-item').forEach(x=>x.classList.remove('active'));
@@ -507,9 +317,6 @@ function aSwitchTab(btn, panelId) {
   });
 }
 
-// ════════════════════════════════════════════════
-// MODALS
-// ════════════════════════════════════════════════
 function openMo(id){ document.getElementById(id).classList.add('open'); }
 function closeMo(id){ document.getElementById(id).classList.remove('open'); }
 document.addEventListener('click', e => {
@@ -517,9 +324,6 @@ document.addEventListener('click', e => {
   if(e.target.id==='m-cert-detail') e.target.classList.remove('open');
 });
 
-// ════════════════════════════════════════════════
-// MEMBER: render certificates grid from certData
-// ════════════════════════════════════════════════
 function renderMemberCerts() {
   const grid = document.getElementById('m-cert-grid');
   if (!grid) return;
@@ -551,22 +355,16 @@ function openMCert(i) {
   document.getElementById('m-cert-detail').classList.add('open');
 }
 function handleDownloadCert() {
-  // BACKEND HOOK: GET /api/certificates/:id/download (returns a PDF stream)
   showToast('📥 Downloading certificate PDF...', 'info');
 }
 function handleShareLinkedIn() {
-  // BACKEND HOOK: open LinkedIn's share intent URL with the cert's public link
   showToast('🔗 Opening LinkedIn share dialog...', 'info');
 }
 function claimCertificate(btn) {
-  // BACKEND HOOK: POST /api/certificates/claim { sessionId }
   btn.outerHTML = '<span class="badge bg-g">✓ Claimed</span>';
   showToast('Certificate claimed! Check the Certificates page.', 'success');
 }
 
-// ════════════════════════════════════════════════
-// MEMBER: skill tree node modal + filters
-// ════════════════════════════════════════════════
 function openNodeMo(state, title, desc, date) {
   const icons={done:'✅',active:'🟡',locked:'🔒'};
   document.getElementById('m-ni-icon').textContent=icons[state];
@@ -592,59 +390,42 @@ function openNodeMo(state, title, desc, date) {
 function filterSkillTree(chip, area) {
   chip.closest('.m-tf').querySelectorAll('.fchip').forEach(c=>c.classList.remove('active'));
   chip.classList.add('active');
-  // BACKEND HOOK: GET /api/members/:id/skill-tree?area=<area> and re-render the SVG nodes.
   showToast(area === 'all' ? 'Showing all skill tree areas.' : `Filtered to ${area}.`, 'info', 1800);
 }
 function unlockNextNode() {
-  // BACKEND HOOK: POST /api/members/:id/skill-tree/unlock
   triggerConfetti();
   showToast("🎉 You've reached 80%! L&D node is now UNLOCKED!", 'success', 4000);
 }
 
-// ════════════════════════════════════════════════
-// MEMBER: sessions / registration / search
-// ════════════════════════════════════════════════
 function registerForSession(btn, title) {
-  // BACKEND HOOK: POST /api/sessions/:id/register
   btn.outerHTML = '<span class="badge bg-g" style="margin-top:7px;">✓ Registered</span>';
   showToast(`Registered for "${title}"!`, 'success');
 }
 function handleJoinSession() {
-  // BACKEND HOOK: this would redirect to the real Zoom URL and log a join event:
-  //   POST /api/sessions/:id/join
   showToast('Joining session...', 'info');
   closeMo('m-join-modal');
 }
 function handleFullRankings() {
-  // BACKEND HOOK: navigate to a full rankings page backed by GET /api/analytics/rankings
   showToast('Opening full province rankings...', 'info');
 }
 function handleMemberSearch(query) {
   if (!query.trim()) return;
-  // BACKEND HOOK: GET /api/sessions/search?q=<query>
   showToast(`Searching sessions for "${query}"...`, 'info');
 }
 function handleSettings() {
-  // BACKEND HOOK: navigate to a settings page / open a settings modal
   showToast('Opening settings — notifications, privacy, preferences.', 'info');
 }
 function handleEditProfile() {
-  // BACKEND HOOK: PUT /api/members/:id
   showToast('Opening profile editor...', 'info');
 }
 function toggleNotifications(role) {
-  // BACKEND HOOK: GET /api/notifications?role=<role>
   if (role === 'member') showToast('3 session reminders, 1 certificate ready!', 'info');
   else showToast('3 pending CSVs · 2 payment reviews · 1 submission awaiting.', 'info');
 }
 function handleExport(what) {
-  // BACKEND HOOK: GET /api/export?type=<what> (returns a file download)
   showToast(`Exporting ${what}...`, 'info');
 }
 
-// ════════════════════════════════════════════════
-// COUNTDOWN (shared timer for the next live session)
-// ════════════════════════════════════════════════
 function startCountdown() {
   setInterval(()=>{
     if(countdown<=0){
@@ -663,9 +444,6 @@ function startCountdown() {
   },1000);
 }
 
-// ════════════════════════════════════════════════
-// ADMIN: members table (rendered from membersData)
-// ════════════════════════════════════════════════
 const initialsColor = { blue:'var(--blue-l)|var(--blue)', green:'var(--green-l)|var(--green)', red:'var(--red-l)|var(--red)', yellow:'var(--yellow-l)|#B45309' };
 function renderMembersTable() {
   const tbody = document.getElementById('a-members-tbody');
@@ -687,55 +465,42 @@ function renderMembersTable() {
   }).join('');
 }
 function handleViewMember(i) {
-  // BACKEND HOOK: GET /api/members/:id (open a full profile drawer/modal)
   const m = membersData[i];
   showToast(`Viewing ${m.name} — ${m.id}`, 'info');
 }
 function handleAddMember() {
-  // BACKEND HOOK: POST /api/members — open a real "add member" form/modal.
-  // Demo: push a placeholder row so the table visibly updates.
   membersData.push({ name:'New Member', initials:'NM', color:'blue', id:`HRC-2025-${String(1000+membersData.length)}`, province:'Cavite', expertise:'Recruitment', expertiseBadge:'bg-t', level:'Entry', levelBadge:'bg-y', attendance:0, certs:0, status:'Active' });
   renderMembersTable();
   showToast('New member added (demo row) — wire this to POST /api/members.', 'success');
 }
 function handlePagination(dir) {
-  // BACKEND HOOK: GET /api/members?page=<n> and re-render renderMembersTable()
   showToast(dir > 0 ? 'Loading next page...' : 'Loading previous page...', 'info');
 }
 function handleAdminSearch(query) {
   if (!query.trim()) return;
-  // BACKEND HOOK: GET /api/members/search?q=<query> or /api/sessions/search?q=<query>
   showToast(`Searching for "${query}"...`, 'info');
 }
 function handleAdminSettings() {
-  // BACKEND HOOK: navigate to admin settings — permissions, API keys, notifications
   showToast('Opening admin settings — permissions, API keys, notifications.', 'info');
 }
 
-// ════════════════════════════════════════════════
-// ADMIN: session creation / editing
-// ════════════════════════════════════════════════
 function saveSessionDraft() {
-  // BACKEND HOOK: POST /api/sessions { status: 'draft', ... }
   sessionsData.draft++;
   showToast('Session saved as draft.', 'success');
   closeMo('a-create-session');
 }
 function publishSession() {
   const title = document.getElementById('acs-title')?.value.trim();
-  // BACKEND HOOK: POST /api/sessions { status: 'published', ... }
   sessionsData.upcoming++;
   showToast(title ? `"${title}" published! Members can now see it.` : 'Session published! Members can now see it.', 'success');
   closeMo('a-create-session');
 }
 function saveSessionChanges() {
-  // BACKEND HOOK: PUT /api/sessions/:id  → then trigger email notifications server-side
   showToast('Session updated. Members notified.', 'success');
   closeMo('a-edit-session');
 }
 function handleCancelSession(btn, title) {
   if (!confirm(`Cancel "${title}"? Registered members will be notified.`)) return;
-  // BACKEND HOOK: DELETE /api/sessions/:id
   const card = btn.closest('.card');
   card.style.opacity = '0.4';
   card.style.pointerEvents = 'none';
@@ -743,7 +508,6 @@ function handleCancelSession(btn, title) {
 }
 function handleDeleteDraft(btn) {
   if (!confirm('Delete this draft? This cannot be undone.')) return;
-  // BACKEND HOOK: DELETE /api/sessions/:id
   btn.closest('.card').remove();
   showToast('Draft deleted.', 'error');
 }
@@ -752,21 +516,7 @@ function copyZoomLink(url) {
   showToast('Zoom link copied to clipboard.', 'success', 1800);
 }
 
-// ════════════════════════════════════════════════
-// ADMIN: Zoom attendance sync / certificate generation
-// (Attendance no longer comes from a manual CSV upload —
-// it's pulled directly from the Zoom API.)
-// ════════════════════════════════════════════════
 function aSimZoomSync() {
-  // BACKEND HOOK: replace this simulated delay with a real call to your
-  // server, which in turn calls the Zoom API (e.g. the "Meeting/Webinar
-  // Participant Reports" endpoint) for the selected session:
-  //
-  //   const sessionId = document.getElementById('a-sync-session').value;
-  //   const res = await fetch(`/api/sessions/${sessionId}/sync-zoom-attendance`, { method: 'POST' });
-  //   const result = await res.json(); // { attendees, qualified, belowThreshold }
-  //   ...render result...
-  //
   const btn = document.getElementById('a-sync-btn');
   const origText = btn.textContent;
   btn.textContent = '⏳ Syncing...'; btn.disabled = true;
@@ -777,41 +527,26 @@ function aSimZoomSync() {
   },1200);
 }
 function handleGenerateCertificates(count) {
-  // BACKEND HOOK: POST /api/sessions/:id/certificates { autoEmail: true }
   showToast(`🎉 Generating ${count} certificates... Members will be emailed automatically.`, 'success', 4000);
 }
 function handleDownloadAllZip() {
-  // BACKEND HOOK: GET /api/certificates/export?format=zip
   showToast('Downloading all certificates as ZIP...', 'info');
 }
 function handleBulkSend() {
-  // BACKEND HOOK: POST /api/certificates/bulk-send
   showToast('Bulk emailing certificates...', 'success');
 }
 function handlePendingCert() {
   showToast('DOLE Compliance — sync attendance from Zoom first to generate certificates.', 'info');
 }
 function handleResendCert(name) {
-  // BACKEND HOOK: POST /api/certificates/:id/resend
   showToast(`Resending certificate email to ${name}...`, 'success');
 }
 function handleOverrideCert(btn, name) {
   if (!confirm(`Force-issue a certificate for ${name} even though they're below threshold? This will be logged.`)) return;
-  // BACKEND HOOK: POST /api/certificates/override { memberName, reason }
   btn.outerHTML = '<span class="badge bg-y">⚠ Overridden</span>';
   showToast(`Certificate override logged for ${name}.`, 'info');
 }
 
-// ════════════════════════════════════════════════
-// ADMIN: payments — VIEW ONLY.
-// Payment status is confirmed automatically by the HitPay webhook
-// (see US-3.1), so there's no manual Mark Paid / Waive action here —
-// the admin just opens a read-only Payment Details modal.
-// BACKEND HOOK: the row data below is currently inline in index.html;
-// swap it for GET /api/payments and pass the fetched record straight
-// into openPaymentDetail(). The actual status change happens server-side
-// at POST /api/payments/hitpay-webhook, not from this UI.
-// ════════════════════════════════════════════════
 const paymentStatusBadge = {
   paid:    '<span class="badge bg-g">✓ Paid</span>',
   pending: '<span class="badge bg-y">⏳ Pending</span>',
@@ -842,9 +577,6 @@ function openPaymentDetail(status, member, session, amount, method, date, extra)
   openMo('a-payment-detail');
 }
 
-// ════════════════════════════════════════════════
-// CONFETTI (pure client-side, no backend needed)
-// ════════════════════════════════════════════════
 function triggerConfetti(){
   const wrap=document.getElementById('confetti-wrap');
   const cols=['#E53935','#1976D2','#FFC107','#2E7D32','#9C27B0'];
@@ -857,19 +589,6 @@ function triggerConfetti(){
   setTimeout(()=>wrap.innerHTML='',3000);
 }
 
-// ════════════════════════════════════════════════
-// AI BOT — shared, role-aware
-// BACKEND HOOK: sendBot() below replies from a hardcoded
-// keyword map (memberReplies / adminReplies). To wire in a
-// real AI backend, replace the matching block with:
-//
-//   const data = await apiRequest('/chatbot', {
-//     method: 'POST',
-//     body: JSON.stringify({ message: msg, role: currentRole, userId: loggedInUser?.id })
-//   });
-//   renderBotReply(data.reply);
-//
-// ════════════════════════════════════════════════
 const memberReplies = {
   'next session':'Your next session is **Advanced HR Analytics Workshop** with Dr. Ana Reyes on Jun 15 at 2:00 PM. The Join Now button activates when it goes live! 🎯',
   'mid level':'To reach **Mid Level** you need:\n✅ 80% overall attendance (you\'re at 72%)\n✅ Complete at least 3 skill tree tracks\n✅ Earn 6+ certificates\n\nJoin 2 more sessions to hit 80%! 🚀',
@@ -918,8 +637,6 @@ function sendBot(msg){
   msgs.innerHTML+=`<div class="bmsg u">${escapeHtml(msg)}</div>`;
   document.getElementById('bot-in').value='';
 
-  // BACKEND HOOK: swap this local keyword lookup for a real API call — see
-  // the comment block above this function for the exact fetch() shape.
   const replies=currentRole==='admin' ? adminReplies : memberReplies;
   let reply=replies['default'];
   const ml=msg.toLowerCase();
@@ -939,12 +656,6 @@ function escapeHtml(s){
   return d.innerHTML;
 }
 
-// ════════════════════════════════════════════════
-// INIT
-// BACKEND HOOK: this is the natural place to kick off
-// an initial data load, e.g.:
-//   apiRequest('/stats/overview').then(s => { ...populate lh-stat-* ... });
-// ════════════════════════════════════════════════
 document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('m-today').textContent = todayStr();
   document.getElementById('a-date').textContent = todayStr();

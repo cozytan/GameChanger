@@ -5,22 +5,10 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>GameChanger — HR Calabarzon</title>
 <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=DM+Sans:ital,wght@0,400;0,500;0,600;1,400&display=swap" rel="stylesheet">
-
-<!-- ════════════════════════════════════════════
-     FILE STRUCTURE
-     index.html  → this file (structure/markup only)
-     style.css   → all visual styling
-     script.js   → all behavior, dummy data, and
-                   the backend/API integration points
-     Keep these three files in the same folder.
-════════════════════════════════════════════ -->
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
 
-<!-- ══════════════════════════════════════════
-     SHARED LOGIN PAGE
-══════════════════════════════════════════ -->
 <div id="login-page" class="login-shell">
   <div class="login-hero">
     <div class="lh-content">
@@ -28,8 +16,6 @@
       <div class="lh-title">Game<span>Changer</span></div>
       <div class="lh-sub">HR Calabarzon's unified platform for members, admins, and executives.</div>
       <div class="lh-stats">
-        <!-- These numbers come from statsData in script.js.
-             BACKEND HOOK: replace with GET /api/stats/overview -->
         <div class="lh-stat"><div class="n" id="lh-stat-members">17k+</div><div class="l">Members</div></div>
         <div class="lh-stat"><div class="n" id="lh-stat-provinces">5</div><div class="l">Provinces</div></div>
         <div class="lh-stat"><div class="n" id="lh-stat-tracks">7</div><div class="l">HR Tracks</div></div>
@@ -51,12 +37,11 @@
     <div class="lf-title">Welcome back 👋</div>
     <div class="lf-sub">Sign in to your GameChanger account</div>
 
-    <!-- Single credential field — auto-detects member vs admin from format -->
     <div class="fg">
       <label class="fl" id="cred-label">Email Address</label>
       <input class="fi member-mode" type="text" id="l-cred"
         placeholder="yourname@email.com"
-        value="maria@hrcalabarzon.ph"
+        value=""
         oninput="detectCredential(this.value)"
         autocomplete="username">
       <div class="f-hint" id="cred-hint" style="color:var(--t3);">
@@ -71,13 +56,10 @@
 
     <div class="fg">
       <label class="fl">Password</label>
-      <input class="fi member-mode" type="password" id="l-pass" placeholder="••••••••" value="password123" autocomplete="current-password">
+      <input class="fi member-mode" type="password" id="l-pass" placeholder="••••••••" value="" autocomplete="current-password">
       <div class="f-forgot" onclick="handleForgotPassword()">Forgot password?</div>
     </div>
 
-    <!-- BACKEND HOOK: doLogin() in script.js currently checks against
-         a hardcoded DUMMY_USERS array. Swap that block for a real
-         POST /api/auth/login call (see comments in script.js). -->
     <button id="login-btn" class="login-btn-base login-btn-member" onclick="doLogin()">Sign In →</button>
     <div id="login-err" style="display:none;font-size:12px;margin-top:8px;text-align:center;padding:9px 12px;background:var(--red-l);color:var(--red-d);border-radius:9px;width:100%;"></div>
 
@@ -91,15 +73,11 @@
       Don't have an account? <a style="color:var(--red);font-weight:600;cursor:pointer;" onclick="showRegisterPage()">Create one</a>
     </div>
     <div style="text-align:center;font-size:11px;color:var(--t3);margin-top:18px;line-height:1.6;">
-      Demo credentials — Member: <strong>maria@hrcalabarzon.ph</strong> / <strong>password123</strong><br>
-      Admin: <strong>ADM-2025-0001</strong> / <strong>password123</strong>
+      Demo Admin: <strong>ADM-2025-0001</strong> / <strong>password123</strong>
     </div>
   </div>
 </div>
 
-<!-- ══════════════════════════════════════════
-     REGISTRATION PAGE
-══════════════════════════════════════════ -->
 <div id="register-page" class="login-shell" style="display:none;">
   <div class="login-hero">
     <div class="lh-content">
@@ -159,7 +137,7 @@
     <div class="g2" style="width:100%;">
       <div class="fg">
         <label class="fl">Department</label>
-        <input class="fi member-mode" type="text" id="r-department" placeholder="e.g. Human Resources">
+        <input class="fi member-mode" type="text" id="r-department" placeholder="e.g. Recruitment">
       </div>
       <div class="fg">
         <label class="fl">Position</label>
@@ -167,10 +145,6 @@
       </div>
     </div>
 
-    <!-- BACKEND HOOK: handleRegister() in script.js currently just validates
-         client-side, simulates a delay, and stores the new account in the
-         in-memory DUMMY_USERS array. Replace that block with a real
-         POST /api/auth/register call (see comments in script.js). -->
     <button id="register-btn" class="login-btn-base login-btn-member" onclick="handleRegister()">Register →</button>
     <div id="register-err" style="display:none;font-size:12px;margin-top:8px;text-align:center;padding:9px 12px;background:var(--red-l);color:var(--red-d);border-radius:9px;width:100%;"></div>
 
@@ -180,9 +154,6 @@
   </div>
 </div>
 
-<!-- ══════════════════════════════════════════
-     MEMBER DASHBOARD
-══════════════════════════════════════════ -->
 <div id="member-app" class="app" style="display:none;">
   <nav class="sidebar">
     <div class="sb-top">
@@ -221,7 +192,6 @@
       </div>
     </header>
 
-    <!-- HOME -->
     <div id="mp-home" class="page active">
       <div class="m-welcome-card">
         <div class="m-wt"><h2 id="m-welcome-name">Hi, Maria! 👋</h2><p>Ready to take the next step in your HR journey today?</p><div class="m-wdate" id="m-today"></div></div>
@@ -301,7 +271,6 @@
       </div>
     </div>
 
-    <!-- CAREER PATH -->
     <div id="mp-career" class="page">
       <div class="m-ch">
         <div class="m-mb"><div style="font-size:30px;">🏅</div><div class="m-mlv">ENTRY</div><div class="m-mst">HR Practitioner</div><div style="height:1px;background:var(--border);margin:11px 0;"></div><div style="font-size:11px;color:var(--t3);">Cavite · #12 Rank</div><button class="btn btn-outline btn-sm" style="margin-top:11px;font-size:11px;" onclick="mShowPage('profile')">View Profile</button></div>
@@ -388,7 +357,6 @@
       </div>
     </div>
 
-    <!-- ATTENDANCE -->
     <div id="mp-attendance" class="page">
       <div class="fbar">
         <select class="fs2" style="width:auto;"><option>All Areas</option><option>Recruitment</option><option>Compliance</option><option>L&D</option><option>HRIS</option></select>
@@ -428,19 +396,15 @@
       </div>
     </div>
 
-    <!-- CERTIFICATES -->
     <div id="mp-certificates" class="page">
       <div class="fbar">
         <select class="fs2" style="width:auto;"><option>All Years</option><option>2025</option><option>2024</option></select>
         <select class="fs2" style="width:auto;"><option>All Accreditations</option><option>PHRCI</option><option>TESDA</option><option>DOLE</option></select>
         <input class="fi2" placeholder="Search certificates..." style="max-width:200px;">
       </div>
-      <!-- Cert cards are rendered from certData in script.js via renderMemberCerts().
-           BACKEND HOOK: replace certData with GET /api/members/:id/certificates -->
       <div class="m-cg" id="m-cert-grid"></div>
     </div>
 
-    <!-- PROFILE -->
     <div id="mp-profile" class="page">
       <div style="display:grid;grid-template-columns:270px 1fr;gap:18px;">
         <div class="card cp" style="text-align:center;">
@@ -483,10 +447,9 @@
         </div>
       </div>
     </div>
-  </div><!-- /member main -->
-</div><!-- /member app -->
+  </div>
+</div>
 
-<!-- MEMBER MODALS -->
 <div class="mo" id="m-node-modal">
   <div class="modal"><div class="mh"><div style="display:flex;gap:10px;align-items:center;"><span id="m-ni-icon" style="font-size:22px;"></span><div class="mt" id="m-ni-title"></div></div><button class="mc" onclick="closeMo('m-node-modal')">✕</button></div>
   <div class="mb"><div id="m-ni-body" style="font-size:14px;color:var(--t2);line-height:1.6;"></div><div id="m-ni-prog" style="margin-top:14px;"></div><div style="display:flex;gap:8px;margin-top:18px;"><button class="btn btn-primary btn-sm" id="m-ni-btn">View Details</button><button class="btn btn-ghost btn-sm" onclick="closeMo('m-node-modal')">Close</button></div></div></div>
@@ -496,7 +459,6 @@
   <div class="mb"><p style="font-size:14px;color:var(--t2);line-height:1.6;">You're joining: <strong>Advanced HR Analytics Workshop</strong> with Dr. Ana Reyes<br><br>📅 Jun 15, 2025 · 2:00 PM · 90 min<br><br>Your attendance will be recorded automatically.</p></div>
   <div class="mf"><button class="btn btn-primary" onclick="handleJoinSession()">🚀 Join Now</button><button class="btn btn-ghost" onclick="closeMo('m-join-modal')">Cancel</button></div></div>
 </div>
-<!-- Member cert detail overlay -->
 <div class="m-cdov" id="m-cert-detail">
   <div class="m-cdp">
     <div class="m-cprev" id="m-cd-prev"><div class="m-cpinner"><div style="font-size:36px;margin-bottom:7px;" id="m-cd-seal">🏆</div><div style="font-size:10px;color:rgba(255,255,255,.65);text-transform:uppercase;letter-spacing:.1em;">Certificate of Completion</div><div class="m-cptit" id="m-cd-title">Title</div><div class="m-cpname">This certifies that</div><div style="font-size:18px;font-weight:800;color:white;margin-top:3px;">Maria Cristina Santos</div><div class="m-cqr">QR</div><div style="font-size:10px;color:rgba(255,255,255,.55);">Scan to verify</div></div></div>
@@ -515,9 +477,6 @@
   </div>
 </div>
 
-<!-- ══════════════════════════════════════════
-     ADMIN DASHBOARD
-══════════════════════════════════════════ -->
 <div id="admin-app" class="app" style="display:none;">
   <nav class="sidebar">
     <div class="sb-top">
@@ -558,7 +517,6 @@
       </div>
     </header>
 
-    <!-- ADMIN HOME -->
     <div id="ap-home" class="page active">
       <div style="background:linear-gradient(135deg,#0D1B2A,#1A237E 50%,#B71C1C);border-radius:var(--r4);padding:22px 26px;color:white;display:flex;align-items:center;gap:18px;margin-bottom:20px;position:relative;overflow:hidden;">
         <div style="position:absolute;right:-30px;top:-30px;width:150px;height:150px;background:rgba(255,255,255,.04);border-radius:50%;"></div>
@@ -610,7 +568,6 @@
       </div>
     </div>
 
-    <!-- ADMIN ANALYTICS -->
     <div id="ap-analytics" class="page">
       <div class="g3" style="margin-bottom:20px;">
         <div class="card cp"><div class="ct" style="margin-bottom:13px;">📍 Attendance by Province</div><div class="cb">
@@ -653,7 +610,6 @@
       </div>
     </div>
 
-    <!-- ADMIN MEMBERS -->
     <div id="ap-members" class="page">
       <div class="fbar">
         <input class="fi2" style="max-width:240px;" placeholder="Search name, ID, email...">
@@ -662,8 +618,6 @@
         <button class="btn btn-ghost btn-sm" onclick="handleExport('member CSV')">⬇ Export CSV</button>
         <button class="btn btn-red btn-sm" onclick="handleAddMember()">+ Add Member</button>
       </div>
-      <!-- This table is rendered by renderMembersTable() in script.js from membersData.
-           BACKEND HOOK: replace membersData with GET /api/members?page=1 -->
       <div class="card">
         <table class="dt"><thead><tr><th>Member</th><th>ID</th><th>Province</th><th>Expertise</th><th>Level</th><th>Attendance</th><th>Certs</th><th>Status</th><th>Actions</th></tr></thead>
         <tbody id="a-members-tbody"></tbody>
@@ -672,7 +626,6 @@
       </div>
     </div>
 
-    <!-- ADMIN SESSIONS -->
     <div id="ap-sessions" class="page">
       <div style="display:flex;justify-content:flex-end;margin-bottom:16px;"><button class="btn btn-red" onclick="openMo('a-create-session')">+ Create New Session</button></div>
       <div class="pill-tabs">
@@ -693,17 +646,12 @@
       <div id="as-draft" class="apanel"><div class="card cp" style="max-width:380px;border:2px dashed var(--border);"><span class="badge bg-gr" style="margin-bottom:9px;">Draft</span><div style="font-family:var(--font-h);font-size:14px;font-weight:700;margin-bottom:5px;">HR Tech & AI Tools Showcase</div><div style="font-size:12px;color:var(--t3);margin-bottom:11px;">Created Jun 12</div><div style="display:flex;gap:7px;"><button class="btn btn-sm btn-red" onclick="openMo('a-edit-session')">Continue Editing</button><button class="btn btn-sm btn-danger" onclick="handleDeleteDraft(this)">Delete</button></div></div></div>
     </div>
 
-    <!-- ADMIN ATTENDANCE -->
     <div id="ap-attendance" class="page">
       <div class="pill-tabs">
         <button class="pt active" onclick="aSwitchTab(this,'at-certs')">🏆 Certificates</button>
         <button class="pt" onclick="aSwitchTab(this,'at-monitor')">📊 Distribution</button>
       </div>
       <div id="at-certs" class="apanel active">
-        <!-- Attendance now comes straight from the Zoom API — no manual CSV step.
-             BACKEND HOOK: this "Sync" card should call POST /api/sessions/:id/sync-zoom-attendance,
-             which pulls the participant report via the Zoom API server-side and returns
-             { attendees, qualified, belowThreshold } — same shape the old CSV parser produced. -->
         <div class="card cp" style="margin-bottom:14px;">
           <div class="ct" style="margin-bottom:4px;">🔄 Sync Attendance from Zoom</div>
           <div style="font-size:12px;color:var(--t2);margin-bottom:14px;">Attendance is pulled automatically from the Zoom API. Sync a session to auto-generate certificates for members with ≥80% attendance.</div>
@@ -743,7 +691,6 @@
       </div>
     </div>
 
-    <!-- ADMIN PAYMENTS -->
     <div id="ap-payments" class="page">
       <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:13px;margin-bottom:18px;">
         <div class="card cp" style="text-align:center;"><div style="font-size:20px;font-weight:800;font-family:var(--font-h);color:var(--green);">₱186,400</div><div style="font-size:12px;color:var(--t2);">Total Collected</div></div>
@@ -752,12 +699,6 @@
         <div class="card cp" style="text-align:center;"><div style="font-size:20px;font-weight:800;font-family:var(--font-h);color:var(--purple);">12</div><div style="font-size:12px;color:var(--t2);">Waivers</div></div>
       </div>
       <div class="fbar"><select class="fs2" style="width:auto;"><option>All Sessions</option><option>Advanced HR Analytics</option><option>DOLE Compliance</option></select><select class="fs2" style="width:auto;"><option>All Status</option><option>Paid</option><option>Pending</option><option>Waived</option></select><input class="fi2" placeholder="Search member..." style="max-width:180px;"><button class="btn btn-ghost btn-sm" onclick="handleExport('payments Excel')">⬇ Export</button></div>
-      <!-- Payments are now confirmed automatically via the HitPay webhook (see US-3.1),
-           so the admin view here is read-only — a single "View" action opens the
-           Payment Details modal below. No manual Mark Paid / Waive actions.
-           BACKEND HOOK: GET /api/payments populates a-payments-tbody;
-           the webhook handler (POST /api/payments/hitpay-webhook) is what actually
-           flips a row from Pending → Paid server-side. -->
       <div class="card"><table class="dt"><thead><tr><th>Member</th><th>Session</th><th>Amount</th><th>Method</th><th>Date</th><th>Status</th><th>Actions</th></tr></thead><tbody id="a-payments-tbody">
         <tr><td><div style="display:flex;align-items:center;gap:7px;"><div style="width:27px;height:27px;border-radius:50%;background:var(--blue-l);display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;color:var(--blue);">MS</div><div class="nc">Maria Santos</div></div></td><td>DOLE Compliance</td><td style="font-weight:700;">₱500</td><td>GCash</td><td>Jun 12</td><td><span class="badge bg-g">✓ Paid</span></td><td><button class="btn btn-xs btn-ghost" onclick="openPaymentDetail('paid','Maria Santos','DOLE Compliance','₱500','GCash','Jun 12','REF-2025-06-0847')">View</button></td></tr>
         <tr><td><div style="display:flex;align-items:center;gap:7px;"><div style="width:27px;height:27px;border-radius:50%;background:var(--yellow-l);display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;color:#B45309;">JP</div><div class="nc">Jose Padilla</div></div></td><td>HR Analytics</td><td style="font-weight:700;">₱500</td><td>—</td><td>—</td><td><span class="badge bg-y">⏳ Pending</span></td><td><button class="btn btn-xs btn-ghost" onclick="openPaymentDetail('pending','Jose Padilla','HR Analytics','₱500','—','—','')">View</button></td></tr>
@@ -765,10 +706,9 @@
       </tbody></table></div>
     </div>
 
-  </div><!-- /admin main -->
-</div><!-- /admin app -->
+  </div>
+</div>
 
-<!-- ADMIN MODALS -->
 <div class="mo" id="a-create-session">
   <div class="modal modal-lg"><div class="mh"><div class="mt">📅 Create New Session</div><button class="mc" onclick="closeMo('a-create-session')">✕</button></div>
   <div class="mb"><div class="g2">
@@ -786,8 +726,6 @@
     <div class="fg2"><div class="fl2">Accreditation Body</div><input class="fi2" placeholder="e.g. PHRCI, TESDA, DOLE"></div>
     <div class="fg2" style="grid-column:1/-1;"><div class="fl2">Description</div><textarea class="fta" placeholder="Session description and learning outcomes..."></textarea></div>
   </div></div>
-  <!-- BACKEND HOOK: saveSessionDraft() / publishSession() in script.js currently just
-       push into the in-memory sessionsData array. Replace with POST /api/sessions -->
   <div class="mf"><button class="btn btn-ghost" onclick="saveSessionDraft()">Save as Draft</button><button class="btn btn-red" onclick="publishSession()">Publish Session</button></div></div>
 </div>
 <div class="mo" id="a-edit-session">
@@ -801,7 +739,6 @@
     <div class="fg2"><div class="fl2">Capacity</div><input class="fi2" type="number" value="180"></div>
   </div>
   <div style="background:var(--yellow-l);border-radius:var(--r2);padding:10px 13px;margin-top:4px;font-size:12px;color:#B45309;">⚠ 142 members are registered. Edits will trigger a notification email to all registrants.</div></div>
-  <!-- BACKEND HOOK: replace with PUT /api/sessions/:id -->
   <div class="mf"><button class="btn btn-ghost" onclick="closeMo('a-edit-session')">Cancel</button><button class="btn btn-red" onclick="saveSessionChanges()">Save Changes</button></div></div>
 </div>
 <div class="mo" id="a-cert-detail">
@@ -825,7 +762,6 @@
   <div class="mf"><button class="btn btn-ghost" onclick="closeMo('a-payment-detail')">Close</button></div></div>
 </div>
 
-<!-- SHARED AI BOT -->
 <div class="bot-fab" onclick="toggleBot()" id="bot-fab">🤖</div>
 <div class="bot-panel" id="bot-panel">
   <div class="bh">
@@ -833,8 +769,6 @@
     <div><div style="font-weight:700;font-size:14px;">GameBot</div><div style="font-size:11px;color:var(--t3);" id="bot-role-label">AI Assistant</div></div>
     <button onclick="toggleBot()" style="margin-left:auto;background:none;border:none;cursor:pointer;color:var(--t3);font-size:16px;">✕</button>
   </div>
-  <!-- BACKEND HOOK: sendBot() in script.js replies from a hardcoded keyword map.
-       Swap that block for a real POST /api/chatbot call (see comments in script.js). -->
   <div class="bmsgs" id="bot-msgs"><div class="bmsg b" id="bot-greeting">Hi! 👋 I'm GameBot. How can I help?</div></div>
   <div class="bqp" id="bot-qp"></div>
   <div class="bir">
@@ -843,31 +777,11 @@
   </div>
 </div>
 
-<!-- SHARED CONFETTI -->
 <div id="confetti-wrap" style="position:fixed;inset:0;pointer-events:none;z-index:999;"></div>
 
-<!-- Toast container for lightweight, non-blocking notifications (replaces alert() calls) -->
 <div class="toast-wrap" id="toast-wrap"></div>
 
-<!-- ════════════════════════════════════════════
-     script.js contains: state, dummy data, every
-     onclick handler referenced above, and the
-     backend/database integration comments.
-════════════════════════════════════════════ -->
-<script src="script.js"></script>
-</body>
-</html>
-
-<!-- SHARED CONFETTI -->
-<div id="confetti-wrap" style="position:fixed;inset:0;pointer-events:none;z-index:999;"></div>
-
-<!-- Toast container for lightweight, non-blocking notifications -->
-<div class="toast-wrap" id="toast-wrap"></div>
-
-<!-- 1. ADD THIS SUPABASE CDN SCRIPT -->
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-
-<!-- 2. YOUR EXISTING SCRIPT TAG -->
 <script src="script.js"></script>
 </body>
 </html>
