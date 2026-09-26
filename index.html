@@ -56,7 +56,6 @@
       <label class="fl" id="cred-label">Email Address</label>
       <input class="fi member-mode" type="text" id="l-cred"
         placeholder="yourname@email.com"
-        value="maria@hrcalabarzon.ph"
         oninput="detectCredential(this.value)"
         autocomplete="username">
       <div class="f-hint" id="cred-hint" style="color:var(--t3);">
@@ -71,13 +70,11 @@
 
     <div class="fg">
       <label class="fl">Password</label>
-      <input class="fi member-mode" type="password" id="l-pass" placeholder="••••••••" value="password123" autocomplete="current-password">
+      <input class="fi member-mode" type="password" id="l-pass" placeholder="••••••••" autocomplete="current-password">
       <div class="f-forgot" onclick="handleForgotPassword()">Forgot password?</div>
     </div>
 
-    <!-- BACKEND HOOK: doLogin() in script.js currently checks against
-         a hardcoded DUMMY_USERS array. Swap that block for a real
-         POST /api/auth/login call (see comments in script.js). -->
+    <!-- doLogin() in script.js signs in through Supabase Auth. -->
     <button id="login-btn" class="login-btn-base login-btn-member" onclick="doLogin()">Sign In →</button>
     <div id="login-err" style="display:none;font-size:12px;margin-top:8px;text-align:center;padding:9px 12px;background:var(--red-l);color:var(--red-d);border-radius:9px;width:100%;"></div>
 
@@ -91,8 +88,7 @@
       Don't have an account? <a style="color:var(--red);font-weight:600;cursor:pointer;" onclick="showRegisterPage()">Create one</a>
     </div>
     <div style="text-align:center;font-size:11px;color:var(--t3);margin-top:18px;line-height:1.6;">
-      Demo credentials — Member: <strong>maria@hrcalabarzon.ph</strong> / <strong>password123</strong><br>
-      Admin: <strong>ADM-2025-0001</strong> / <strong>password123</strong>
+      Members sign in with their registered email · Admins sign in with their Admin ID (ADM-YYYY-NNNN)
     </div>
   </div>
 </div>
@@ -129,7 +125,8 @@
     </div>
     <div class="fg">
       <label class="fl">Email Address</label>
-      <input class="fi member-mode" type="email" id="r-email" placeholder="yourname@email.com" autocomplete="email">
+      <input class="fi member-mode" type="email" id="r-email" placeholder="yourname@email.com" autocomplete="email" onblur="liveCheckEmail(this.value)" oninput="clearEmailHint()">
+      <div class="f-hint" id="r-email-hint">A confirmation link will be sent to this address. You must click it before you can sign in.</div>
     </div>
     <div class="g2" style="width:100%;">
       <div class="fg">
@@ -167,10 +164,9 @@
       </div>
     </div>
 
-    <!-- BACKEND HOOK: handleRegister() in script.js currently just validates
-         client-side, simulates a delay, and stores the new account in the
-         in-memory DUMMY_USERS array. Replace that block with a real
-         POST /api/auth/register call (see comments in script.js). -->
+    <!-- handleRegister() in script.js validates the email, then calls
+         supabase.auth.signUp(), which creates the user in Authentication → Users
+         and sends the confirmation email. -->
     <button id="register-btn" class="login-btn-base login-btn-member" onclick="handleRegister()">Register →</button>
     <div id="register-err" style="display:none;font-size:12px;margin-top:8px;text-align:center;padding:9px 12px;background:var(--red-l);color:var(--red-d);border-radius:9px;width:100%;"></div>
 
@@ -217,7 +213,7 @@
       <div class="tb-right">
         <div class="ib" onclick="toggleBot()"><div class="ndot" style="background:var(--yellow);"></div><span style="font-size:15px;">🤖</span></div>
         <div class="ib" onclick="toggleNotifications('member')"><div class="ndot" style="background:var(--red);"></div><svg width="15" height="15" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" d="M15 17H9v1a3 3 0 006 0v-1zm-9 0a9 9 0 0118 0"/></svg></div>
-        <div class="tb-av" style="background:linear-gradient(135deg,var(--red),var(--blue));" onclick="mShowPage('profile')">MS</div>
+        <div class="tb-av" id="m-tb-av" style="background:linear-gradient(135deg,var(--red),var(--blue));" onclick="mShowPage('profile')">MS</div>
       </div>
     </header>
 
@@ -444,9 +440,9 @@
     <div id="mp-profile" class="page">
       <div style="display:grid;grid-template-columns:270px 1fr;gap:18px;">
         <div class="card cp" style="text-align:center;">
-          <div style="width:76px;height:76px;border-radius:50%;background:linear-gradient(135deg,var(--red),var(--blue));display:flex;align-items:center;justify-content:center;margin:0 auto 11px;font-size:26px;font-weight:800;color:white;">MS</div>
-          <div style="font-family:var(--font-h);font-size:17px;font-weight:700;">Maria Santos</div>
-          <div style="font-size:12px;color:var(--t3);margin-top:3px;">HRC-2024-0847</div>
+          <div style="width:76px;height:76px;border-radius:50%;background:linear-gradient(135deg,var(--red),var(--blue));display:flex;align-items:center;justify-content:center;margin:0 auto 11px;font-size:26px;font-weight:800;color:white;" id="m-prof-av">MS</div>
+          <div style="font-family:var(--font-h);font-size:17px;font-weight:700;" id="m-prof-name">Maria Santos</div>
+          <div style="font-size:12px;color:var(--t3);margin-top:3px;" id="m-prof-id">HRC-2024-0847</div>
           <div style="background:var(--blue-l);color:var(--blue);border-radius:20px;padding:4px 14px;display:inline-block;font-size:12px;font-weight:700;margin-top:7px;">Entry Level</div>
           <div style="margin-top:14px;padding-top:14px;border-top:1px solid var(--border);">
             <div style="font-size:12px;color:var(--t3);margin-bottom:5px;">Attendance Rate</div>
@@ -465,10 +461,10 @@
           <div class="card cp">
             <div class="ct" style="margin-bottom:14px;">Personal Information</div>
             <div class="g2">
-              <div><div style="font-size:11px;color:var(--t3);font-weight:600;text-transform:uppercase;margin-bottom:3px;">Full Name</div><div style="font-weight:600;">Maria Cristina Santos</div></div>
-              <div><div style="font-size:11px;color:var(--t3);font-weight:600;text-transform:uppercase;margin-bottom:3px;">Email</div><div style="font-weight:600;">maria@hrcalabarzon.ph</div></div>
-              <div><div style="font-size:11px;color:var(--t3);font-weight:600;text-transform:uppercase;margin-bottom:3px;">Province</div><div style="font-weight:600;">Cavite</div></div>
-              <div><div style="font-size:11px;color:var(--t3);font-weight:600;text-transform:uppercase;margin-bottom:3px;">Organization</div><div style="font-weight:600;">MSME HR Solutions, Inc.</div></div>
+              <div><div style="font-size:11px;color:var(--t3);font-weight:600;text-transform:uppercase;margin-bottom:3px;">Full Name</div><div style="font-weight:600;" id="m-prof-fullname">Maria Cristina Santos</div></div>
+              <div><div style="font-size:11px;color:var(--t3);font-weight:600;text-transform:uppercase;margin-bottom:3px;">Email</div><div style="font-weight:600;" id="m-prof-email">maria@hrcalabarzon.ph</div></div>
+              <div><div style="font-size:11px;color:var(--t3);font-weight:600;text-transform:uppercase;margin-bottom:3px;">Province</div><div style="font-weight:600;" id="m-prof-province">Cavite</div></div>
+              <div><div style="font-size:11px;color:var(--t3);font-weight:600;text-transform:uppercase;margin-bottom:3px;">Organization</div><div style="font-weight:600;" id="m-prof-company">MSME HR Solutions, Inc.</div></div>
             </div>
           </div>
           <div class="card cp">
@@ -541,8 +537,8 @@
     </div>
     <div class="sb-footer">
       <div class="user-card">
-        <div class="user-av" style="background:linear-gradient(135deg,var(--red-d),var(--red));">JD</div>
-        <div><div class="user-name">Juan Dela Cruz</div><div class="user-role">Super Admin</div></div>
+        <div class="user-av" id="a-user-av" style="background:linear-gradient(135deg,var(--red-d),var(--red));">JD</div>
+        <div><div class="user-name" id="a-user-name">Juan Dela Cruz</div><div class="user-role" id="a-user-id">ADM-2025-0001</div></div>
         <button class="sign-out-btn" onclick="switchToLogin()" title="Sign out"><svg width="13" height="13" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"/></svg></button>
       </div>
     </div>
@@ -554,7 +550,7 @@
       <div class="tb-right">
         <div class="ib" onclick="toggleBot()"><div class="ndot" style="background:var(--yellow);"></div><span style="font-size:15px;">🤖</span></div>
         <div class="ib" onclick="toggleNotifications('admin')"><div class="ndot" style="background:var(--red);"></div><svg width="15" height="15" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" d="M15 17H9v1a3 3 0 006 0v-1zm-9 0a9 9 0 0118 0"/></svg></div>
-        <div class="tb-av" style="background:linear-gradient(135deg,var(--red-d),var(--red));">JD</div>
+        <div class="tb-av" id="a-tb-av" style="background:linear-gradient(135deg,var(--red-d),var(--red));">JD</div>
       </div>
     </header>
 
@@ -563,7 +559,7 @@
       <div style="background:linear-gradient(135deg,#0D1B2A,#1A237E 50%,#B71C1C);border-radius:var(--r4);padding:22px 26px;color:white;display:flex;align-items:center;gap:18px;margin-bottom:20px;position:relative;overflow:hidden;">
         <div style="position:absolute;right:-30px;top:-30px;width:150px;height:150px;background:rgba(255,255,255,.04);border-radius:50%;"></div>
         <div style="flex:1;">
-          <div style="font-family:var(--font-h);font-size:19px;font-weight:700;">Good morning, Juan! 👋</div>
+          <div style="font-family:var(--font-h);font-size:19px;font-weight:700;" id="a-welcome-name">Good morning, Juan! 👋</div>
           <div style="font-size:13px;opacity:.7;margin-top:3px;" id="a-date"></div>
           <div style="display:flex;gap:11px;margin-top:13px;">
             <div style="background:rgba(255,255,255,.12);border-radius:10px;padding:8px 15px;cursor:pointer;" onclick="aShowPage('attendance')"><div style="font-size:10px;opacity:.6;text-transform:uppercase;letter-spacing:.05em;">Awaiting Zoom Sync</div><div style="font-family:var(--font-h);font-size:20px;font-weight:800;">1</div></div>
@@ -846,6 +842,32 @@
 <!-- SHARED CONFETTI -->
 <div id="confetti-wrap" style="position:fixed;inset:0;pointer-events:none;z-index:999;"></div>
 
+<!-- ══════════════════════════════════════════
+     FORGOT PASSWORD (request reset link)
+══════════════════════════════════════════ -->
+<div class="mo" id="forgot-modal">
+  <div class="modal"><div class="mh"><div class="mt">🔑 Reset your password</div><button class="mc" onclick="closeMo('forgot-modal')">✕</button></div>
+  <div class="mb">
+    <p style="font-size:13px;color:var(--t2);line-height:1.6;margin-bottom:12px;">Enter your registered email address or Admin ID. We'll send a reset link to the email on file.</p>
+    <input class="fi member-mode" type="text" id="fp-email" placeholder="yourname@email.com or ADM-YYYY-NNNN" autocomplete="email" onkeydown="if(event.key==='Enter')sendResetLink()">
+    <div id="fp-msg" style="display:none;font-size:12px;margin-top:10px;padding:9px 12px;border-radius:9px;"></div>
+  </div>
+  <div class="mf"><button class="btn btn-primary" id="fp-btn" onclick="sendResetLink()">Send reset link</button><button class="btn btn-ghost" onclick="closeMo('forgot-modal')">Cancel</button></div></div>
+</div>
+
+<!-- ══════════════════════════════════════════
+     SET NEW PASSWORD (opened from the email link)
+══════════════════════════════════════════ -->
+<div class="mo" id="reset-modal">
+  <div class="modal"><div class="mh"><div class="mt">🔒 Set a new password</div></div>
+  <div class="mb">
+    <div class="fg"><label class="fl">New password</label><input class="fi member-mode" type="password" id="rp-pass" placeholder="At least 6 characters" autocomplete="new-password"></div>
+    <div class="fg"><label class="fl">Re-type new password</label><input class="fi member-mode" type="password" id="rp-pass2" placeholder="••••••••" autocomplete="new-password" onkeydown="if(event.key==='Enter')saveNewPassword()"></div>
+    <div id="rp-msg" style="display:none;font-size:12px;margin-top:6px;padding:9px 12px;border-radius:9px;background:var(--red-l);color:var(--red-d);"></div>
+  </div>
+  <div class="mf"><button class="btn btn-primary" id="rp-btn" onclick="saveNewPassword()">Save new password</button></div></div>
+</div>
+
 <!-- Toast container for lightweight, non-blocking notifications (replaces alert() calls) -->
 <div class="toast-wrap" id="toast-wrap"></div>
 
@@ -854,6 +876,8 @@
      onclick handler referenced above, and the
      backend/database integration comments.
 ════════════════════════════════════════════ -->
+<!-- Supabase JS client (browser build). Must load BEFORE script.js. -->
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="script.js"></script>
 </body>
 </html>

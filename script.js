@@ -13,7 +13,12 @@
    ════════════════════════════════════════════════════════════════
    🔌 BACKEND / DATABASE INTEGRATION — READ ME FIRST
    ════════════════════════════════════════════════════════════════
-   This file currently runs entirely on DUMMY DATA (the objects/arrays
+   ✅ AUTH IS NOW LIVE ON SUPABASE: login, registration, email
+      confirmation, and forgot/reset password use Supabase Auth.
+      Fill in SUPABASE_URL and SUPABASE_ANON_KEY below, and run
+      supabase_setup.sql in the Supabase SQL Editor.
+   The REST of the app (members table, sessions, payments, certs)
+   still runs on DUMMY DATA (the objects/arrays
    in the "DUMMY DATA" section below) so the whole app works offline,
    with no server. To connect a real backend + database:
 
@@ -83,16 +88,41 @@ async function apiRequest(path, options = {}) {
 // backend (see BACKEND HOOK comments near each use).
 // ════════════════════════════════════════════════
 
-// Login credentials for the demo. In production, authentication
-// happens on the server — never ship real passwords to the client.
-const DUMMY_USERS = {
-  members: [
-    { credential: 'maria@hrcalabarzon.ph', password: 'password123', id: 'HRC-2024-0847', name: 'Maria Santos', initials: 'MS' }
-  ],
-  admins: [
-    { credential: 'ADM-2025-0001', password: 'password123', id: 'ADM-2025-0001', name: 'Juan Dela Cruz', initials: 'JD' }
-  ]
-};
+// ════════════════════════════════════════════════
+// SUPABASE CONNECTION
+// Copy these two values from:
+//   Supabase Dashboard → Project Settings → API
+// The "anon / public" key is meant for the browser.
+// NEVER paste the "service_role" key here.
+// ════════════════════════════════════════════════
+const SUPABASE_URL      = 'https://YOUR-PROJECT-REF.supabase.co';
+const SUPABASE_ANON_KEY = 'YOUR-ANON-PUBLIC-KEY';
+
+// Where the links inside Supabase emails (confirm sign-up, reset password)
+// bring the user back to. This exact URL must also be added in:
+//   Authentication → URL Configuration → Redirect URLs
+const APP_URL = window.location.origin + window.location.pathname;
+
+// Read the URL BEFORE the Supabase client consumes it, so we know whether the
+// user just clicked a "reset password" or "confirm email" link.
+const ARRIVED_FROM = (() => {
+  const h = new URLSearchParams(window.location.hash.slice(1));
+  const q = new URLSearchParams(window.location.search);
+  return {
+    type:  h.get('type')  || q.get('type'),
+    error: h.get('error_description') || q.get('error_description')
+  };
+})();
+
+if (!window.supabase || typeof window.supabase.createClient !== 'function') {
+  console.error('Supabase library did not load. Check the <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"> tag in index.html (it must come before script.js).');
+}
+if (window.location.protocol === 'file:') {
+  console.warn('You opened index.html directly from disk (file://). Email links cannot return to a file:// page. Serve the folder instead, e.g. VS Code "Live Server" → http://127.0.0.1:5500/index.html');
+}
+
+// Named "sb" so it doesn't clash with the global "supabase" library object.
+const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 const statsData = { members: '17k+', provinces: 5, tracks: 7 };
 
@@ -177,23 +207,178 @@ function detectCredential(val) {
   }
 }
 
-function doLogin() {
+// ════════════════════════════════════════════════
+// EMAIL VALIDATION
+// No website can prove a mailbox exists without emailing it — that is
+// what Supabase's confirmation link does (the account can't sign in until
+// the link is clicked). Before that, we reject what we CAN detect:
+//   1. bad format            (juan@, juan@gmail, juan gmail.com)
+//   2. common domain typos   (gmial.com, gmail.con, yaho.com)
+//   3. domains with no mail server (checked through public DNS)
+//   4. emails already registered   (email_status() SQL function)
+// ════════════════════════════════════════════════
+const EMAIL_REGEX = /^[A-Za-z0-9._%+-]+@(?:[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?\.)+[A-Za-z]{2,}$/;
+
+const DOMAIN_TYPOS = {
+  'gmial.com':'gmail.com','gmal.com':'gmail.com','gmai.com':'gmail.com','gamil.com':'gmail.com',
+  'gnail.com':'gmail.com','gmail.co':'gmail.com','gmail.con':'gmail.com','gmail.cm':'gmail.com','gmail.om':'gmail.com',
+  'yaho.com':'yahoo.com','yahooo.com':'yahoo.com','yahoo.con':'yahoo.com','yahoo.co':'yahoo.com',
+  'hotmial.com':'hotmail.com','hotmal.com':'hotmail.com','hotmail.con':'hotmail.com',
+  'outlok.com':'outlook.com','outloo.com':'outlook.com','outlook.con':'outlook.com',
+  'icloud.con':'icloud.com','iclod.com':'icloud.com'
+};
+
+// Ask Google's public DNS whether the domain can receive email.
+// Returns true / false, or null when the check itself couldn't run
+// (offline, blocked by a firewall) — in that case we don't block the user.
+async function domainAcceptsMail(domain) {
+  async function dns(type) {
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 4000);
+    try {
+      const res = await fetch(`https://dns.google/resolve?name=${encodeURIComponent(domain)}&type=${type}`, { signal: ctrl.signal });
+      return res.ok ? await res.json() : null;
+    } finally { clearTimeout(timer); }
+  }
+  try {
+    const mx = await dns('MX');
+    if (!mx) return null;
+    if (mx.Status === 3) return false;          // NXDOMAIN — the domain doesn't exist
+    if (mx.Status !== 0) return null;
+    const records = (mx.Answer || []).filter(a => a.type === 15);
+    if (records.length) {
+      // "Null MX" (priority 0, host ".") means the domain explicitly accepts no mail
+      return !records.every(a => /^0\s+\.?$/.test(String(a.data).trim()));
+    }
+    const a = await dns('A');                   // no MX → mail falls back to the A record
+    return a ? (a.Answer || []).some(r => r.type === 1) : null;
+  } catch (e) {
+    return null;
+  }
+}
+
+// Returns { ok: boolean, msg: string }
+async function validateEmail(rawEmail, { checkDuplicate = false } = {}) {
+  const email = rawEmail.trim().toLowerCase();
+  if (!email) return { ok: false, msg: 'Please enter your email address.' };
+  if (!EMAIL_REGEX.test(email) || email.includes('..')) {
+    return { ok: false, msg: 'That doesn\'t look like a valid email address (example: juan@gmail.com).' };
+  }
+  const domain = email.split('@')[1];
+  if (DOMAIN_TYPOS[domain]) {
+    return { ok: false, msg: `Did you mean ${email.split('@')[0]}@${DOMAIN_TYPOS[domain]}? "${domain}" looks like a typo.` };
+  }
+  const acceptsMail = await domainAcceptsMail(domain);
+  if (acceptsMail === false) {
+    return { ok: false, msg: `The domain "${domain}" doesn't exist or can't receive email. Please check the spelling.` };
+  }
+  if (checkDuplicate) {
+    // 'none' | 'unconfirmed' | 'confirmed'. An unconfirmed address may sign up
+    // again — Supabase simply re-sends the confirmation link.
+    const { data, error } = await sb.rpc('email_status', { p_email: email });
+    if (!error && data === 'confirmed') {
+      return { ok: false, msg: 'This email is already registered. Sign in instead, or use "Forgot password?".' };
+    }
+  }
+  return { ok: true, msg: '' };
+}
+
+// Live feedback while typing the registration email
+async function liveCheckEmail(value) {
+  const hint = document.getElementById('r-email-hint');
+  if (!hint || !value.trim()) return;
+  hint.style.color = 'var(--t3)';
+  hint.textContent = 'Checking email...';
+  const result = await validateEmail(value, { checkDuplicate: true });
+  if (document.getElementById('r-email').value.trim() !== value.trim()) return; // user kept typing
+  hint.style.color = result.ok ? 'var(--green, #2E7D32)' : 'var(--red-d)';
+  hint.textContent = result.ok
+    ? '✓ Looks good. We\'ll send a confirmation link to this address.'
+    : result.msg;
+}
+function clearEmailHint() {
+  const hint = document.getElementById('r-email-hint');
+  if (!hint) return;
+  hint.style.color = 'var(--t3)';
+  hint.textContent = 'A confirmation link will be sent to this address. You must click it before you can sign in.';
+}
+
+// Turn Supabase error messages into something a member understands,
+// and log the technical reason for whoever is maintaining the app.
+function friendlyAuthError(error) {
+  const m = (error && error.message ? error.message : String(error)).toLowerCase();
+  console.error('[Supabase]', error);
+  if (m.includes('invalid login credentials'))  return 'Incorrect email/Admin ID or password.';
+  if (m.includes('email not confirmed'))        return 'Please confirm your email first — open the link we sent to your inbox (check Spam too).';
+  if (m.includes('already registered'))         return 'This email is already registered. Sign in instead, or use "Forgot password?".';
+  if (m.includes('rate limit') || m.includes('too many') || (error && error.status === 429))
+    return 'Too many emails were requested. Please wait a while and try again. (Admin: Supabase\'s built-in mailer allows only a few emails per hour — set up custom SMTP.)';
+  if (m.includes('not authorized') || m.includes('error sending'))
+    return 'We couldn\'t send the email. (Admin: Supabase\'s built-in mailer only delivers to your Supabase team members — set up custom SMTP under Authentication → Emails → SMTP Settings.)';
+  if (m.includes('database error'))
+    return 'The account could not be saved. (Admin: run the supabase_setup.sql script in the SQL Editor — the profile trigger is failing.)';
+  if (m.includes('password should be') || m.includes('weak password'))
+    return 'Password is too weak. Use at least 6 characters.';
+  if (m.includes('failed to fetch') || m.includes('network'))
+    return 'Can\'t reach the server. Check your internet connection and your SUPABASE_URL in script.js.';
+  return error && error.message ? error.message : 'Something went wrong. Please try again.';
+}
+
+// ════════════════════════════════════════════════
+// SESSION / PROFILE
+// ════════════════════════════════════════════════
+function makeInitials(name) {
+  return (name || '').split(' ').filter(Boolean).map(w => w[0]).join('').slice(0, 2).toUpperCase() || 'ME';
+}
+
+// Reads the row for this user from public.profiles (created by the SQL trigger)
+async function loadProfile(user) {
+  const { data, error } = await sb.from('profiles').select('*').eq('id', user.id).maybeSingle();
+  if (error) console.error('[Supabase] Could not load profile:', error);
+  const meta = user.user_metadata || {};
+  const p = data || {};
+  const name = p.full_name || meta.full_name || user.email;
+  return {
+    uid:      user.id,
+    id:       p.member_id || '—',
+    role:     p.role || 'member',
+    name,
+    initials: makeInitials(name),
+    email:    user.email,
+    province: p.province || meta.province || '',
+    company:  p.company  || meta.company  || '',
+    department: p.department || meta.department || '',
+    position: p.position || meta.position || ''
+  };
+}
+
+// loginMode: 'admin' when the user typed an Admin ID, 'member' for email, null for a restored session
+async function startSession(user, loginMode) {
+  const profile = await loadProfile(user);
+  if (loginMode === 'admin' && profile.role !== 'admin') {
+    await sb.auth.signOut();
+    throw new Error('This Admin ID does not belong to an admin account.');
+  }
+  loggedInUser = profile;
+  currentRole  = profile.role === 'admin' ? 'admin' : 'member';
+  enterApp();
+}
+
+let pendingConfirmEmail = null;
+
+async function doLogin() {
   const cred = document.getElementById('l-cred').value.trim();
   const p    = document.getElementById('l-pass').value;
   const err  = document.getElementById('login-err');
-
   err.style.display = 'none';
 
   if (!cred || !p) {
     showLoginErr('Please enter your ' + (currentRole === 'admin' ? 'Admin ID' : 'email address') + ' and password.');
     return;
   }
-  if (currentRole === 'member' && !cred.includes('@')) {
+  const loginMode = isAdminId(cred) ? 'admin' : 'member';
+  if (loginMode === 'member' && !EMAIL_REGEX.test(cred)) {
     showLoginErr('Please enter a valid email address. Admin IDs use the format ADM-YYYY-NNNN.');
-    return;
-  }
-  if (currentRole === 'admin' && !isAdminId(cred)) {
-    showLoginErr('Admin ID format is invalid. Expected format: ADM-YYYY-NNNN (e.g. ADM-2025-0001).');
     return;
   }
 
@@ -201,64 +386,96 @@ function doLogin() {
   const origText = btn.textContent;
   btn.textContent = 'Signing in...'; btn.disabled = true;
 
-  // ──────────────────────────────────────────────
-  // BACKEND HOOK: replace this whole block with a real login call:
-  //
-  //   apiRequest('/auth/login', {
-  //     method: 'POST',
-  //     body: JSON.stringify({ credential: cred, password: p })
-  //   }).then(data => {
-  //     authToken = data.token;      // store the session token
-  //     loggedInUser = data.user;
-  //     currentRole = data.role;     // 'member' | 'admin'
-  //     enterApp();
-  //   }).catch(() => showLoginErr('Invalid credentials.'));
-  //
-  // For now we just check the DUMMY_USERS table above.
-  // ──────────────────────────────────────────────
-  setTimeout(() => {
-    btn.textContent = origText; btn.disabled = false;
-
-    const pool = currentRole === 'admin' ? DUMMY_USERS.admins : DUMMY_USERS.members;
-    const match = pool.find(u => u.credential.toLowerCase() === cred.toLowerCase() && u.password === p);
-
-    if (!match) {
-      showLoginErr('Incorrect credentials. Try the demo login shown below the form.');
-      return;
+  try {
+    // Supabase signs in with an EMAIL, so an Admin ID is first translated
+    // to the admin's email by the get_login_email() SQL function.
+    let email = cred.toLowerCase();
+    if (loginMode === 'admin') {
+      const { data, error } = await sb.rpc('get_login_email', { p_member_id: cred.toUpperCase() });
+      if (error) throw error;
+      if (!data) { showLoginErr('Admin ID not found.'); return; }
+      email = data;
     }
 
-    loggedInUser = match;
-    enterApp();
-  }, 800);
+    const { data, error } = await sb.auth.signInWithPassword({ email, password: p });
+    if (error) {
+      if (error.message.toLowerCase().includes('email not confirmed')) {
+        pendingConfirmEmail = email;
+        showLoginErrHtml('Please confirm your email first — open the link we sent to your inbox (check Spam too).<br><a style="font-weight:700;cursor:pointer;text-decoration:underline;" onclick="resendConfirmation()">Resend confirmation email</a>');
+        return;
+      }
+      showLoginErr(friendlyAuthError(error));
+      return;
+    }
+    await startSession(data.user, loginMode);
+  } catch (e) {
+    showLoginErr(friendlyAuthError(e));
+  } finally {
+    btn.textContent = origText; btn.disabled = false;
+  }
+}
+
+async function resendConfirmation() {
+  if (!pendingConfirmEmail) return;
+  const { error } = await sb.auth.resend({
+    type: 'signup',
+    email: pendingConfirmEmail,
+    options: { emailRedirectTo: APP_URL }
+  });
+  if (error) showLoginErr(friendlyAuthError(error));
+  else showToast(`Confirmation email re-sent to ${pendingConfirmEmail}.`, 'success', 5000);
 }
 
 function enterApp() {
   document.getElementById('login-page').style.display = 'none';
+  document.getElementById('register-page').style.display = 'none';
+  const first = loggedInUser.name.split(' ')[0];
+  const setText = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
+
   if (currentRole === 'admin') {
     document.getElementById('admin-app').style.display = 'flex';
     document.getElementById('a-date').textContent = todayStr();
+    setText('a-user-av', loggedInUser.initials);
+    setText('a-tb-av', loggedInUser.initials);
+    setText('a-user-name', loggedInUser.name);
+    setText('a-user-id', loggedInUser.id);
+    setText('a-welcome-name', `Good morning, ${first}! 👋`);
     setupAdminBot();
     renderMembersTable();
   } else {
     document.getElementById('member-app').style.display = 'flex';
     document.getElementById('m-today').textContent = todayStr();
-    document.getElementById('m-welcome-name').textContent = `Hi, ${loggedInUser.name.split(' ')[0]}! 👋`;
-    document.getElementById('m-user-name').textContent = loggedInUser.name;
-    document.getElementById('m-user-id').textContent = loggedInUser.id;
-    document.getElementById('m-user-av').textContent = loggedInUser.initials;
+    setText('m-welcome-name', `Hi, ${first}! 👋`);
+    setText('m-user-name', loggedInUser.name);
+    setText('m-user-id', loggedInUser.id);
+    setText('m-user-av', loggedInUser.initials);
+    setText('m-tb-av', loggedInUser.initials);
+    setText('m-prof-av', loggedInUser.initials);
+    setText('m-prof-name', loggedInUser.name);
+    setText('m-prof-id', loggedInUser.id);
+    setText('m-prof-fullname', loggedInUser.name);
+    setText('m-prof-email', loggedInUser.email);
+    setText('m-prof-province', loggedInUser.province || '—');
+    setText('m-prof-company', loggedInUser.company || '—');
     setupMemberBot();
     startCountdown();
     renderMemberCerts();
   }
-  showToast(`Welcome back, ${loggedInUser.name.split(' ')[0]}!`, 'success');
+  showToast(`Welcome back, ${first}!`, 'success');
 }
 
 function showLoginErr(msg) {
   const el = document.getElementById('login-err');
   el.textContent = msg; el.style.display = 'block';
 }
+function showLoginErrHtml(html) {
+  const el = document.getElementById('login-err');
+  el.innerHTML = html; el.style.display = 'block';
+}
 
 function switchToLogin() {
+  sb.auth.signOut().catch(e => console.error('[Supabase] sign-out failed', e));
+
   document.getElementById('member-app').style.display = 'none';
   document.getElementById('admin-app').style.display = 'none';
   document.getElementById('register-page').style.display = 'none';
@@ -266,7 +483,6 @@ function switchToLogin() {
   botOpen = false;
   document.getElementById('bot-panel').classList.remove('open');
   loggedInUser = null;
-  // BACKEND HOOK: also call POST /api/auth/logout and clear authToken here.
 
   currentRole = 'member';
   const credEl = document.getElementById('l-cred');
@@ -285,13 +501,100 @@ function todayStr() {
   return new Date().toLocaleDateString('en-PH',{weekday:'long',year:'numeric',month:'long',day:'numeric'});
 }
 
+// ════════════════════════════════════════════════
+// FORGOT PASSWORD
+// Step 1: user enters email (or Admin ID) → Supabase emails a reset link
+// Step 2: link opens this page → "Set a new password" modal → updateUser()
+// ════════════════════════════════════════════════
 function handleForgotPassword() {
-  // BACKEND HOOK: POST /api/auth/forgot-password { email }
-  showToast('Password reset link sent to your registered email.', 'success');
+  const typed = document.getElementById('l-cred').value.trim();
+  document.getElementById('fp-email').value = typed;
+  const msg = document.getElementById('fp-msg');
+  msg.style.display = 'none';
+  openMo('forgot-modal');
+  setTimeout(() => document.getElementById('fp-email').focus(), 50);
 }
-function handleLinkedInLogin() {
-  // BACKEND HOOK: kick off OAuth flow, e.g. window.location = '/api/auth/linkedin'
-  showToast('Redirecting to LinkedIn sign-in...', 'info');
+
+function showFpMsg(text, ok) {
+  const msg = document.getElementById('fp-msg');
+  msg.textContent = text;
+  msg.style.background = ok ? 'var(--green-l, #E8F5E9)' : 'var(--red-l)';
+  msg.style.color      = ok ? 'var(--green, #2E7D32)'   : 'var(--red-d)';
+  msg.style.display = 'block';
+}
+
+function maskEmail(email) {
+  const [u, d] = email.split('@');
+  return (u.length <= 2 ? u[0] + '*' : u.slice(0, 2) + '*'.repeat(Math.max(1, u.length - 2))) + '@' + d;
+}
+
+async function sendResetLink() {
+  const input = document.getElementById('fp-email').value.trim();
+  const btn = document.getElementById('fp-btn');
+  if (!input) { showFpMsg('Please enter your email address or Admin ID.', false); return; }
+
+  btn.disabled = true; const orig = btn.textContent; btn.textContent = 'Sending...';
+  try {
+    let email = input.toLowerCase();
+    let viaAdminId = false;
+
+    if (isAdminId(input)) {
+      const { data, error } = await sb.rpc('get_login_email', { p_member_id: input.toUpperCase() });
+      if (error) throw error;
+      if (!data) { showFpMsg('Admin ID not found.', false); return; }
+      email = data; viaAdminId = true;
+    } else {
+      if (!EMAIL_REGEX.test(email)) { showFpMsg('Please enter a valid email address.', false); return; }
+      // Tell the user plainly if there is no account for this email
+      const { data: status, error } = await sb.rpc('email_status', { p_email: email });
+      if (!error && status === 'none') {
+        showFpMsg('No account is registered with this email. Check the spelling or create an account.', false);
+        return;
+      }
+    }
+
+    const { error } = await sb.auth.resetPasswordForEmail(email, { redirectTo: APP_URL });
+    if (error) { showFpMsg(friendlyAuthError(error), false); return; }
+
+    const shown = viaAdminId ? maskEmail(email) : email;
+    showFpMsg(`✓ Reset link sent to ${shown}. Open it on this device to set a new password (check Spam too).`, true);
+  } catch (e) {
+    showFpMsg(friendlyAuthError(e), false);
+  } finally {
+    btn.disabled = false; btn.textContent = orig;
+  }
+}
+
+function openResetModal() {
+  document.getElementById('rp-msg').style.display = 'none';
+  document.getElementById('login-page').style.display = 'flex';
+  document.getElementById('member-app').style.display = 'none';
+  document.getElementById('admin-app').style.display = 'none';
+  openMo('reset-modal');
+}
+
+async function saveNewPassword() {
+  const p1 = document.getElementById('rp-pass').value;
+  const p2 = document.getElementById('rp-pass2').value;
+  const msg = document.getElementById('rp-msg');
+  const btn = document.getElementById('rp-btn');
+  msg.style.display = 'none';
+  const fail = t => { msg.textContent = t; msg.style.display = 'block'; };
+
+  if (p1.length < 6) return fail('Password must be at least 6 characters.');
+  if (p1 !== p2)     return fail('Passwords do not match.');
+
+  btn.disabled = true; btn.textContent = 'Saving...';
+  const { error } = await sb.auth.updateUser({ password: p1 });
+  btn.disabled = false; btn.textContent = 'Save new password';
+  if (error) return fail(friendlyAuthError(error));
+
+  await sb.auth.signOut();
+  document.getElementById('rp-pass').value = '';
+  document.getElementById('rp-pass2').value = '';
+  closeMo('reset-modal');
+  history.replaceState(null, '', APP_URL);
+  showToast('Password updated! Sign in with your new password.', 'success', 5000);
 }
 
 // ════════════════════════════════════════════════
@@ -312,9 +615,10 @@ function showRegisterErr(msg) {
   const el = document.getElementById('register-err');
   el.textContent = msg; el.style.display = 'block';
 }
-function handleRegister() {
+
+async function handleRegister() {
   const fullName    = document.getElementById('r-fullname').value.trim();
-  const email       = document.getElementById('r-email').value.trim();
+  const email       = document.getElementById('r-email').value.trim().toLowerCase();
   const pass        = document.getElementById('r-pass').value;
   const pass2       = document.getElementById('r-pass2').value;
   const province    = document.getElementById('r-province').value;
@@ -328,58 +632,91 @@ function handleRegister() {
     showRegisterErr('Please fill in all fields.');
     return;
   }
-  if (!email.includes('@')) {
-    showRegisterErr('Please enter a valid email address.');
-    return;
-  }
-  if (pass.length < 6) {
-    showRegisterErr('Password must be at least 6 characters.');
-    return;
-  }
-  if (pass !== pass2) {
-    showRegisterErr('Passwords do not match.');
-    return;
-  }
+  if (pass.length < 6) { showRegisterErr('Password must be at least 6 characters.'); return; }
+  if (pass !== pass2)  { showRegisterErr('Passwords do not match.'); return; }
 
   const btn = document.getElementById('register-btn');
   const origText = btn.textContent;
-  btn.textContent = 'Creating account...'; btn.disabled = true;
+  btn.textContent = 'Checking email...'; btn.disabled = true;
 
-  // ──────────────────────────────────────────────
-  // BACKEND HOOK: replace this whole block with a real registration call:
-  //
-  //   apiRequest('/auth/register', {
-  //     method: 'POST',
-  //     body: JSON.stringify({ fullName, email, password: pass, province, company, department, position })
-  //   }).then(() => {
-  //     showLoginPage();
-  //     showToast('Account created! Sign in to continue.', 'success');
-  //   }).catch(() => showRegisterErr('Registration failed. Please try again.'));
-  //
-  // For now we just simulate a short delay and add the new account to the
-  // in-memory DUMMY_USERS table so it could (in a real backend) be used to
-  // log in immediately after.
-  // ──────────────────────────────────────────────
-  setTimeout(() => {
-    btn.textContent = origText; btn.disabled = false;
+  try {
+    const check = await validateEmail(email, { checkDuplicate: true });
+    if (!check.ok) { showRegisterErr(check.msg); return; }
 
-    DUMMY_USERS.members.push({
-      credential: email,
+    btn.textContent = 'Creating account...';
+
+    // Creates the user in Authentication → Users and sends the confirmation email.
+    // The extra fields go into user metadata; the SQL trigger copies them
+    // into public.profiles and assigns a member ID (HRC-YYYY-NNNN).
+    const { data, error } = await sb.auth.signUp({
+      email,
       password: pass,
-      id: `HRC-2025-${String(1000 + DUMMY_USERS.members.length)}`,
-      name: fullName,
-      initials: fullName.split(' ').filter(Boolean).map(w => w[0]).join('').slice(0, 2).toUpperCase() || 'ME'
+      options: {
+        emailRedirectTo: APP_URL,
+        data: { full_name: fullName, province, company, department, position }
+      }
     });
+    if (error) { showRegisterErr(friendlyAuthError(error)); return; }
+
+    // Supabase hides duplicates by returning a user with no identities
+    if (data.user && Array.isArray(data.user.identities) && data.user.identities.length === 0) {
+      showRegisterErr('This email is already registered. Sign in instead, or use "Forgot password?".');
+      return;
+    }
+
+    if (data.session) {
+      // "Confirm email" is switched OFF in Supabase, so nobody verifies the address.
+      console.warn('Supabase "Confirm email" is disabled — fake emails can register. Turn it on in Authentication → Sign In / Providers → Email.');
+      await sb.auth.signOut();
+    }
 
     ['r-fullname','r-email','r-pass','r-pass2','r-company','r-department','r-position'].forEach(id => {
       document.getElementById(id).value = '';
     });
     document.getElementById('r-province').value = '';
+    clearEmailHint();
 
     showLoginPage();
-    showToast(`Account created! Sign in as ${fullName.split(' ')[0]} to continue.`, 'success', 4000);
-  }, 900);
+    document.getElementById('l-cred').value = email;
+    detectCredential(email);
+    showToast(`Account created! We sent a confirmation link to ${email}. Click it, then sign in.`, 'success', 7000);
+  } catch (e) {
+    showRegisterErr(friendlyAuthError(e));
+  } finally {
+    btn.textContent = origText; btn.disabled = false;
+  }
 }
+
+// ════════════════════════════════════════════════
+// AUTH STARTUP
+// Restores a logged-in session, and handles people arriving
+// from the "confirm email" or "reset password" links.
+// ════════════════════════════════════════════════
+sb.auth.onAuthStateChange((event) => {
+  // Keep this callback synchronous (Supabase recommendation)
+  if (event === 'PASSWORD_RECOVERY') openResetModal();
+});
+
+(async function initAuth() {
+  if (ARRIVED_FROM.error) {
+    showToast(`Link problem: ${ARRIVED_FROM.error}. Request a new link.`, 'error', 7000);
+    history.replaceState(null, '', APP_URL);
+    return;
+  }
+  const { data: { session } } = await sb.auth.getSession();
+
+  if (ARRIVED_FROM.type === 'recovery') { openResetModal(); return; }
+
+  if (session) {
+    try {
+      await startSession(session.user, null);
+      if (ARRIVED_FROM.type === 'signup') showToast('Email confirmed — your account is active! 🎉', 'success', 5000);
+    } catch (e) {
+      console.error(e);
+    }
+  }
+  if (ARRIVED_FROM.type) history.replaceState(null, '', APP_URL);
+})();
 
 // ════════════════════════════════════════════════
 // MEMBER NAVIGATION

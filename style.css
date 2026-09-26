@@ -1,4 +1,12 @@
+/* ════════════════════════════════════════════
+   GameChanger — HR Calabarzon
+   style.css — shared stylesheet
+   Linked from index.html, used with script.js
+════════════════════════════════════════════ */
 
+/* ════════════════════════════════════════════
+   SHARED TOKENS
+════════════════════════════════════════════ */
 :root {
   --red:#E53935; --red-l:#FFEBEE; --red-d:#B71C1C;
   --blue:#1976D2; --blue-l:#E3F2FD; --blue-d:#0D47A1;
