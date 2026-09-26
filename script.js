@@ -95,9 +95,8 @@ async function apiRequest(path, options = {}) {
 // The "anon / public" key is meant for the browser.
 // NEVER paste the "service_role" key here.
 // ════════════════════════════════════════════════
-const SUPABASE_URL      = 'https://xszowbctpuqbszagzdwa.supabase.co/rest/v1/';
+const SUPABASE_URL      = 'https://xszowbctpuqbszagzdwa.supabase.co';
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inhzem93YmN0cHVxYnN6YWd6ZHdhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODk5NTcyOTMsImV4cCI6MjEwNTUzMzI5M30.oeNCiiRMqnyDWzrwoE5AJldK_83UiqU728aLUk_xdrQ';
-
 // Where the links inside Supabase emails (confirm sign-up, reset password)
 // bring the user back to. This exact URL must also be added in:
 //   Authentication → URL Configuration → Redirect URLs
