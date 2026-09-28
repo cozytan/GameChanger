@@ -97,6 +97,7 @@ async function apiRequest(path, options = {}) {
 // ════════════════════════════════════════════════
 const SUPABASE_URL      = 'https://xszowbctpuqbszagzdwa.supabase.co';
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inhzem93YmN0cHVxYnN6YWd6ZHdhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODk5NTcyOTMsImV4cCI6MjEwNTUzMzI5M30.oeNCiiRMqnyDWzrwoE5AJldK_83UiqU728aLUk_xdrQ';
+
 // Where the links inside Supabase emails (confirm sign-up, reset password)
 // bring the user back to. This exact URL must also be added in:
 //   Authentication → URL Configuration → Redirect URLs
@@ -121,7 +122,7 @@ if (window.location.protocol === 'file:') {
 }
 
 // Named "sb" so it doesn't clash with the global "supabase" library object.
-const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+const sb = window.supabase.createClient(new URL(SUPABASE_URL).origin, SUPABASE_ANON_KEY.trim());
 
 const statsData = { members: '17k+', provinces: 5, tracks: 7 };
 
@@ -351,6 +352,31 @@ async function loadProfile(user) {
   };
 }
 
+// ════════════════════════════════════════════════
+// ACTIVITY LOGS  (tables created by supabase/03_logs.sql)
+//   member_attendance_logs / admin_attendance_logs → sign-in & sign-out
+//   admin_activity_logs                            → what admins changed
+// Logging never blocks the user: failures only show in the console.
+// ════════════════════════════════════════════════
+async function logSignIn(method) {
+  try {
+    const { error } = await sb.rpc('log_sign_in', { p_method: method, p_user_agent: navigator.userAgent });
+    if (error) console.error('[Supabase] sign-in log failed:', error);
+  } catch (e) { console.error('[Supabase] sign-in log failed:', e); }
+}
+async function logSignOut() {
+  try {
+    const { error } = await sb.rpc('log_sign_out');
+    if (error) console.error('[Supabase] sign-out log failed:', error);
+  } catch (e) { console.error('[Supabase] sign-out log failed:', e); }
+}
+// Call from any admin action: logAdminAction('Published session', title, { extra: 'info' })
+function logAdminAction(action, target = null, details = null) {
+  if (currentRole !== 'admin' || !loggedInUser) return;
+  sb.rpc('log_admin_action', { p_action: action, p_target: target, p_details: details })
+    .then(({ error }) => { if (error) console.error('[Supabase] admin activity log failed:', error); });
+}
+
 // loginMode: 'admin' when the user typed an Admin ID, 'member' for email, null for a restored session
 async function startSession(user, loginMode) {
   const profile = await loadProfile(user);
@@ -361,6 +387,9 @@ async function startSession(user, loginMode) {
   loggedInUser = profile;
   currentRole  = profile.role === 'admin' ? 'admin' : 'member';
   enterApp();
+  // A typed login is always logged. A restored session (page reload) only
+  // starts a new row if the user has no recent open sign-in.
+  logSignIn(loginMode ? 'password' : 'session_restored');
 }
 
 let pendingConfirmEmail = null;
@@ -473,7 +502,11 @@ function showLoginErrHtml(html) {
 }
 
 function switchToLogin() {
-  sb.auth.signOut().catch(e => console.error('[Supabase] sign-out failed', e));
+  const hadUser = !!loggedInUser;
+  (async () => {
+    if (hadUser) await logSignOut();          // needs the session, so it runs first
+    await sb.auth.signOut();
+  })().catch(e => console.error('[Supabase] sign-out failed', e));
 
   document.getElementById('member-app').style.display = 'none';
   document.getElementById('admin-app').style.display = 'none';
@@ -882,6 +915,7 @@ function toggleNotifications(role) {
 }
 function handleExport(what) {
   // BACKEND HOOK: GET /api/export?type=<what> (returns a file download)
+  logAdminAction('Exported data', what);
   showToast(`Exporting ${what}...`, 'info');
 }
 
@@ -939,6 +973,8 @@ function handleAddMember() {
   // Demo: push a placeholder row so the table visibly updates.
   membersData.push({ name:'New Member', initials:'NM', color:'blue', id:`HRC-2025-${String(1000+membersData.length)}`, province:'Cavite', expertise:'Recruitment', expertiseBadge:'bg-t', level:'Entry', levelBadge:'bg-y', attendance:0, certs:0, status:'Active' });
   renderMembersTable();
+  const added = membersData[membersData.length - 1];
+  logAdminAction('Added member', added.id, { name: added.name });
   showToast('New member added (demo row) — wire this to POST /api/members.', 'success');
 }
 function handlePagination(dir) {
@@ -961,6 +997,7 @@ function handleAdminSettings() {
 function saveSessionDraft() {
   // BACKEND HOOK: POST /api/sessions { status: 'draft', ... }
   sessionsData.draft++;
+  logAdminAction('Saved session draft', document.getElementById('acs-title')?.value.trim() || null);
   showToast('Session saved as draft.', 'success');
   closeMo('a-create-session');
 }
@@ -968,11 +1005,13 @@ function publishSession() {
   const title = document.getElementById('acs-title')?.value.trim();
   // BACKEND HOOK: POST /api/sessions { status: 'published', ... }
   sessionsData.upcoming++;
+  logAdminAction('Published session', title || null);
   showToast(title ? `"${title}" published! Members can now see it.` : 'Session published! Members can now see it.', 'success');
   closeMo('a-create-session');
 }
 function saveSessionChanges() {
   // BACKEND HOOK: PUT /api/sessions/:id  → then trigger email notifications server-side
+  logAdminAction('Edited session', document.querySelector('#a-edit-session .fi2')?.value.trim() || null);
   showToast('Session updated. Members notified.', 'success');
   closeMo('a-edit-session');
 }
@@ -982,12 +1021,16 @@ function handleCancelSession(btn, title) {
   const card = btn.closest('.card');
   card.style.opacity = '0.4';
   card.style.pointerEvents = 'none';
+  logAdminAction('Cancelled session', title);
   showToast(`"${title}" cancelled. Registrants notified.`, 'error');
 }
 function handleDeleteDraft(btn) {
   if (!confirm('Delete this draft? This cannot be undone.')) return;
   // BACKEND HOOK: DELETE /api/sessions/:id
-  btn.closest('.card').remove();
+  const draftCard = btn.closest('.card');
+  const draftTitle = draftCard.querySelector('.ct, .nc, strong')?.textContent.trim() || null;
+  draftCard.remove();
+  logAdminAction('Deleted session draft', draftTitle);
   showToast('Draft deleted.', 'error');
 }
 function copyZoomLink(url) {
@@ -1016,11 +1059,14 @@ function aSimZoomSync() {
   setTimeout(()=>{
     btn.textContent = origText; btn.disabled = false;
     document.getElementById('a-sync-res').classList.add('show');
+    const syncSel = document.getElementById('a-sync-session');
+    logAdminAction('Synced Zoom attendance', syncSel ? syncSel.options[syncSel.selectedIndex]?.text : null);
     showToast('Attendance synced from Zoom.', 'success');
   },1200);
 }
 function handleGenerateCertificates(count) {
   // BACKEND HOOK: POST /api/sessions/:id/certificates { autoEmail: true }
+  logAdminAction('Generated certificates', null, { count });
   showToast(`🎉 Generating ${count} certificates... Members will be emailed automatically.`, 'success', 4000);
 }
 function handleDownloadAllZip() {
@@ -1029,6 +1075,7 @@ function handleDownloadAllZip() {
 }
 function handleBulkSend() {
   // BACKEND HOOK: POST /api/certificates/bulk-send
+  logAdminAction('Bulk-sent certificates');
   showToast('Bulk emailing certificates...', 'success');
 }
 function handlePendingCert() {
@@ -1036,12 +1083,14 @@ function handlePendingCert() {
 }
 function handleResendCert(name) {
   // BACKEND HOOK: POST /api/certificates/:id/resend
+  logAdminAction('Resent certificate', name);
   showToast(`Resending certificate email to ${name}...`, 'success');
 }
 function handleOverrideCert(btn, name) {
   if (!confirm(`Force-issue a certificate for ${name} even though they're below threshold? This will be logged.`)) return;
   // BACKEND HOOK: POST /api/certificates/override { memberName, reason }
   btn.outerHTML = '<span class="badge bg-y">⚠ Overridden</span>';
+  logAdminAction('Overrode certificate threshold', name);
   showToast(`Certificate override logged for ${name}.`, 'info');
 }
 
