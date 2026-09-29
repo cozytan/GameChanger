@@ -366,9 +366,14 @@ async function logSignIn(method) {
 }
 async function logSignOut() {
   try {
-    const { error } = await sb.rpc('log_sign_out');
+    const { error } = await sb.rpc('log_sign_out', { p_user_agent: navigator.userAgent });
     if (error) console.error('[Supabase] sign-out log failed:', error);
   } catch (e) { console.error('[Supabase] sign-out log failed:', e); }
+}
+// Failed attempts go to login_audit (wrong password, unconfirmed email…)
+function logFailedLogin(identifier, reason) {
+  sb.rpc('log_failed_login', { p_identifier: identifier, p_reason: reason, p_user_agent: navigator.userAgent })
+    .then(({ error }) => { if (error) console.error('[Supabase] failed-login log failed:', error); });
 }
 // Call from any admin action: logAdminAction('Published session', title, { extra: 'info' })
 function logAdminAction(action, target = null, details = null) {
@@ -381,6 +386,7 @@ function logAdminAction(action, target = null, details = null) {
 async function startSession(user, loginMode) {
   const profile = await loadProfile(user);
   if (loginMode === 'admin' && profile.role !== 'admin') {
+    logFailedLogin(profile.id, 'not an admin account');
     await sb.auth.signOut();
     throw new Error('This Admin ID does not belong to an admin account.');
   }
@@ -421,17 +427,19 @@ async function doLogin() {
     if (loginMode === 'admin') {
       const { data, error } = await sb.rpc('get_login_email', { p_member_id: cred.toUpperCase() });
       if (error) throw error;
-      if (!data) { showLoginErr('Admin ID not found.'); return; }
+      if (!data) { logFailedLogin(cred, 'admin id not found'); showLoginErr('Admin ID not found.'); return; }
       email = data;
     }
 
     const { data, error } = await sb.auth.signInWithPassword({ email, password: p });
     if (error) {
       if (error.message.toLowerCase().includes('email not confirmed')) {
+        logFailedLogin(cred, 'email not confirmed');
         pendingConfirmEmail = email;
         showLoginErrHtml('Please confirm your email first — open the link we sent to your inbox (check Spam too).<br><a style="font-weight:700;cursor:pointer;text-decoration:underline;" onclick="resendConfirmation()">Resend confirmation email</a>');
         return;
       }
+      if (error.message.toLowerCase().includes('invalid login credentials')) logFailedLogin(cred, 'wrong password');
       showLoginErr(friendlyAuthError(error));
       return;
     }
