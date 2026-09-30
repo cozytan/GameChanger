@@ -329,3 +329,28 @@ body{font-family:var(--font-b);background:var(--bg);color:var(--t1);min-height:1
 .toast.success{background:var(--green);}
 .toast.error{background:var(--red);}
 .toast.info{background:var(--blue-d);}
+
+
+/* ════════════════════════════════════════════
+   MEMBER MANAGEMENT (Data Management actions,
+   Add / Edit Member page, admin profile)
+════════════════════════════════════════════ */
+.act-btn{display:inline-flex;align-items:center;gap:4px;}
+.act-menu{position:fixed;z-index:450;display:none;min-width:180px;background:white;border:1px solid var(--border);border-radius:var(--r2);box-shadow:var(--sh-md);padding:5px;animation:scaleIn .14s ease;}
+.act-menu.open{display:block;}
+.act-item{display:flex;align-items:center;gap:9px;width:100%;padding:8px 11px;border:none;background:none;border-radius:8px;font-family:var(--font-b);font-size:13px;font-weight:500;color:var(--t1);cursor:pointer;text-align:left;}
+.act-item:hover{background:var(--bg);}
+.act-item.danger{color:var(--red);}
+.act-item.danger:hover{background:var(--red-l);}
+.act-item.good{color:var(--green);}
+.act-item.good:hover{background:var(--green-l);}
+.act-sep{height:1px;background:var(--border);margin:4px 2px;}
+.act-head{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--t3);padding:6px 11px 4px;}
+.mf-layout{display:grid;grid-template-columns:1fr 280px;gap:18px;align-items:start;}
+.mf-sec-title{font-family:var(--font-h);font-size:14px;font-weight:700;margin-bottom:14px;display:flex;align-items:center;}
+.mf-hint{font-size:11px;color:var(--t3);margin-top:4px;}
+.mf-check{display:flex;align-items:center;gap:8px;font-size:13px;color:var(--t2);cursor:pointer;}
+.mf-check input{width:16px;height:16px;accent-color:var(--red);}
+.mf-lbl{font-size:11px;color:var(--t3);font-weight:600;text-transform:uppercase;margin-bottom:3px;}
+tr.is-archived td{opacity:.6;}
+@media (max-width:900px){.mf-layout{grid-template-columns:1fr;}}

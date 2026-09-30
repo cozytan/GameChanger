@@ -221,6 +221,7 @@ function friendlyAuthError(error) {
   const m = (error && error.message ? error.message : String(error)).toLowerCase();
   console.error('[Supabase]', error);
   if (m.includes('invalid login credentials'))  return 'Incorrect email/Admin ID or password.';
+  if (m.includes('banned') || m.includes('archived')) return 'This account has been archived. Please contact an HR Calabarzon admin.';
   if (m.includes('email not confirmed'))        return 'Please confirm your email first — open the link we sent to your inbox (check Spam too).';
   if (m.includes('already registered'))         return 'This email is already registered. Sign in instead, or use "Forgot password?".';
   if (m.includes('rate limit') || m.includes('too many') || (error && error.status === 429))
@@ -260,7 +261,8 @@ async function loadProfile(user) {
     province: p.province || meta.province || '',
     company:  p.company  || meta.company  || '',
     department: p.department || meta.department || '',
-    position: p.position || meta.position || ''
+    position: p.position || meta.position || '',
+    status:   p.status || 'Active'
   };
 }
 
@@ -297,6 +299,10 @@ function logAdminAction(action, target = null, details = null) {
 // loginMode: 'admin' when the user typed an Admin ID, 'member' for email, null for a restored session
 async function startSession(user, loginMode) {
   const profile = await loadProfile(user);
+  if (profile.status === 'Archived') {
+    await sb.auth.signOut();
+    throw new Error('This account has been archived. Please contact an HR Calabarzon admin.');
+  }
   if (loginMode === 'admin' && profile.role !== 'admin') {
     logFailedLogin(profile.id, 'not an admin account');
     await sb.auth.signOut();
@@ -439,6 +445,9 @@ function switchToLogin() {
   loggedInUser = null;
   memberData = null;
   adminData = null;
+  adminMe = null;
+  adminMembers = null;
+  closeActMenu();
 
   currentRole = 'member';
   const credEl = document.getElementById('l-cred');
@@ -674,6 +683,7 @@ sb.auth.onAuthStateChange((event) => {
       if (ARRIVED_FROM.type === 'signup') showToast('Email confirmed — your account is active! 🎉', 'success', 5000);
     } catch (e) {
       console.error(e);
+      showLoginErr(friendlyAuthError(e));
     }
   }
   if (ARRIVED_FROM.type) history.replaceState(null, '', APP_URL);
@@ -699,8 +709,9 @@ function aShowPage(p) {
   document.querySelectorAll('#admin-app .page').forEach(x=>x.classList.remove('active'));
   document.querySelectorAll('#admin-app .nav-item').forEach(x=>x.classList.remove('active'));
   document.getElementById('ap-'+p).classList.add('active');
-  const n=document.getElementById('an-'+p); if(n) n.classList.add('active');
-  const t={home:'Admin Dashboard',analytics:'AI Analytics',members:'Data Management',sessions:'Session Creation',attendance:'Attendance Management',payments:'Payment Management'};
+  const n=document.getElementById('an-'+(p==='member-form'?'members':p)); if(n) n.classList.add('active');
+  closeActMenu();
+  const t={home:'Admin Dashboard',analytics:'AI Analytics',members:'Data Management',sessions:'Session Creation',attendance:'Attendance Management',payments:'Payment Management',profile:'My Profile','member-form':memberFormUserId?'Edit Member':'Add Member'};
   document.getElementById('a-page-title').textContent = t[p]||p;
   window.scrollTo(0,0);
 }
@@ -807,6 +818,10 @@ let aMembersPage = 1;
 const MEMBERS_PER_PAGE = 20;
 let editingSessionId = null;
 let openCertificate = null;
+let adminMe = null;          // result of admin_whoami()   (06_member_management.sql)
+let adminMembers = null;     // result of admin_members()  (06_member_management.sql)
+let memberFormUserId = null; // null = adding, otherwise the account being edited
+let archiveTargetId = null;
 
 // ════════════════════════════════════════════════
 // MEMBER: load + render
@@ -1191,12 +1206,13 @@ function renderMemberProfile() {
   }).join('') : '<span style="font-size:13px;color:var(--t3);">No areas yet — they are added as you progress through sessions.</span>');
 }
 function handleEditProfile() {
-  const me = md().me || {};
+  const me = currentRole === 'admin' ? (adminMe || {}) : (md().me || {});
   document.getElementById('ep-name').value = me.full_name || '';
   document.getElementById('ep-province').value = me.province || 'Cavite';
   document.getElementById('ep-company').value = me.company || '';
   document.getElementById('ep-department').value = me.department || '';
   document.getElementById('ep-position').value = me.position || '';
+  document.getElementById('ep-phone').value = me.phone || '';
   document.getElementById('ep-err').style.display = 'none';
   openMo('m-edit-profile');
 }
@@ -1206,14 +1222,20 @@ async function saveProfile() {
   if (!val('ep-name')) { err.textContent = 'Please enter your full name.'; err.style.display = 'block'; return; }
   const btn = document.getElementById('ep-btn'); btn.disabled = true; btn.textContent = 'Saving...';
   try {
-    await rpc('member_update_profile', { p_data: { full_name: val('ep-name'), province: val('ep-province'), company: val('ep-company'), department: val('ep-department'), position: val('ep-position') } });
+    await rpc('member_update_profile', { p_data: { full_name: val('ep-name'), province: val('ep-province'), company: val('ep-company'), department: val('ep-department'), position: val('ep-position'), phone: val('ep-phone') } });
     closeMo('m-edit-profile');
     loggedInUser.name = val('ep-name');
     loggedInUser.initials = makeInitials(loggedInUser.name);
-    ['m-user-name', 'm-prof-name'].forEach(id => setText(id, loggedInUser.name));
-    ['m-user-av', 'm-tb-av', 'm-prof-av'].forEach(id => setText(id, loggedInUser.initials));
     showToast('Profile updated.', 'success');
-    await loadMemberData();
+    if (currentRole === 'admin') {
+      ['a-user-name'].forEach(id => setText(id, loggedInUser.name));
+      ['a-user-av', 'a-tb-av'].forEach(id => setText(id, loggedInUser.initials));
+      await loadAdminData();
+    } else {
+      ['m-user-name', 'm-prof-name'].forEach(id => setText(id, loggedInUser.name));
+      ['m-user-av', 'm-tb-av', 'm-prof-av'].forEach(id => setText(id, loggedInUser.initials));
+      await loadMemberData();
+    }
   } catch (e) {
     err.textContent = friendlyAuthError(e); err.style.display = 'block';
   } finally {
@@ -1303,20 +1325,32 @@ function handleLinkedInLogin() { showToast('Sign in with LinkedIn is not availab
 // ADMIN: load + render
 // ════════════════════════════════════════════════
 async function loadAdminData() {
-  try {
-    adminData = await rpc('admin_dashboard');
-  } catch (e) {
-    adminData = null;
-    console.error('[Supabase] admin_dashboard failed:', e);
-    showToast('Could not load dashboard data. ' + friendlyAuthError(e), 'error', 6000);
+  const [dash, who, list] = await Promise.allSettled([rpc('admin_dashboard'), rpc('admin_whoami'), rpc('admin_members')]);
+  adminData = dash.status === 'fulfilled' ? dash.value : null;
+  adminMe = who.status === 'fulfilled' ? who.value : null;
+  adminMembers = list.status === 'fulfilled' ? list.value : null;
+  if (dash.status === 'rejected') {
+    console.error('[Supabase] admin_dashboard failed:', dash.reason);
+    showToast('Could not load dashboard data. ' + friendlyAuthError(dash.reason), 'error', 6000);
+  }
+  if (who.status === 'rejected' || list.status === 'rejected') {
+    console.error('[Supabase] member management failed — did you run 06_member_management.sql?', who.reason || list.reason);
   }
   renderAdminAll();
+}
+function isSuperAdmin() { return !!(adminMe && adminMe.is_super); }
+// Rows for the Data Management table (06 list if available, else the dashboard list)
+function membersSource() {
+  if (adminMembers) return adminMembers;
+  return (ad().members || []).map(m => Object.assign({ role: 'member', archived: false }, m));
 }
 function ad() {
   return adminData || { overview: {}, members: [], sessions: [], payments: [], registrations: [], by_province: [], by_area: [], cert_status: {}, monthly: [], areas: [], provinces: [] };
 }
 function renderAdminAll() {
   fillAdminSelects();
+  renderAdminIdentity();
+  renderAdminProfile();
   renderAdminHome();
   renderAnalytics();
   renderMembersTable();
@@ -1357,6 +1391,8 @@ function fillAdminSelects() {
   fill('a-mem-province', d.provinces || [], 'All Provinces');
   fill('a-mem-level', ['Entry', 'Mid', 'Master'], 'All Levels');
   fill('acs-area', d.areas || [], null);
+  fill('mf-expertise', d.areas || [], '— Not set —');
+  const roleSel = document.getElementById('a-mem-role'); if (roleSel) roleSel.style.display = isSuperAdmin() ? '' : 'none';
   const withRegs = (d.sessions || []).filter(s => Number(s.registered) > 0);
   fill('a-cert-filter', withRegs.map(s => s.session_id), 'All Sessions', id => { const s = withRegs.find(x => x.session_id === id); return `${s.title} · ${fmtDateShort(s.start)}`; });
   const paySessions = [...new Map((d.payments || []).filter(p => p.session_id).map(p => [p.session_id, p.session])).entries()];
@@ -1443,10 +1479,15 @@ function filteredMembers() {
   const q = (document.getElementById('a-mem-search')?.value || '').trim().toLowerCase();
   const prov = document.getElementById('a-mem-province')?.value || '';
   const lvl = document.getElementById('a-mem-level')?.value || '';
-  return (ad().members || []).filter(m =>
+  const role = document.getElementById('a-mem-role')?.value || '';
+  const st = document.getElementById('a-mem-status')?.value || 'active';
+  return membersSource().filter(m =>
     (!q || [m.full_name, m.member_id, m.email].some(v => String(v || '').toLowerCase().includes(q)))
-    && (!prov || m.province === prov) && (!lvl || m.level === lvl));
+    && (!prov || m.province === prov) && (!lvl || m.level === lvl)
+    && (!role || (role === 'member' ? m.role === 'member' : m.role !== 'member'))
+    && (st === 'all' || (st === 'archived' ? m.archived : !m.archived)));
 }
+const ROLE_BADGE = { super_admin: '<span class="badge bg-r">🛡 Super Admin</span>', admin: '<span class="badge bg-p">🛡 Admin</span>' };
 function renderMembersTable() {
   const tbody = document.getElementById('a-members-tbody');
   if (!tbody) return;
@@ -1463,18 +1504,18 @@ function renderMembersTable() {
     const hasAtt = Number(att.attended || 0) + Number(att.missed || 0) > 0;
     const rate = hasAtt ? Number(att.rate) : null;
     return `
-    <tr>
-      <td><div style="display:flex;align-items:center;gap:7px;"><div style="width:28px;height:28px;border-radius:50%;background:${bg};display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;color:${fg};">${esc(initialsOf(m.full_name))}</div><div><div class="nc">${esc(m.full_name)}</div><div style="font-size:11px;color:var(--t3);">${esc(m.email)}${m.email_confirmed ? '' : ' · <span style="color:#B45309;">unconfirmed</span>'}</div></div></div></td>
+    <tr class="${m.archived ? 'is-archived' : ''}">
+      <td><div style="display:flex;align-items:center;gap:7px;"><div style="width:28px;height:28px;border-radius:50%;background:${bg};display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;color:${fg};">${esc(initialsOf(m.full_name))}</div><div><div class="nc">${esc(m.full_name)} ${ROLE_BADGE[m.role] || ''}</div><div style="font-size:11px;color:var(--t3);">${esc(m.email)}${m.email_confirmed ? '' : ' · <span style="color:#B45309;">unconfirmed</span>'}</div></div></div></td>
       <td style="color:var(--t3);font-size:12px;">${esc(m.member_id || '—')}</td>
       <td>${esc(m.province || '—')}</td>
       <td>${m.expertise ? areaBadge(m.expertise) : '—'}</td>
       <td><span class="badge ${levelBadge[m.level] || 'bg-gr'}">${esc(m.level)}</span></td>
       <td>${rate == null ? '<span style="font-size:12px;color:var(--t3);">No data</span>' : `<div style="display:flex;align-items:center;gap:7px;"><div class="prog" style="width:55px;"><div class="prog-f" style="width:${rate}%;background:${rate >= 80 ? 'var(--green)' : rate >= 70 ? 'var(--red)' : 'var(--yellow)'};"></div></div><span style="font-size:12px;">${rate}%</span></div>`}</td>
       <td>${fmtInt(m.certificates)}</td>
-      <td><span class="badge ${m.status === 'Active' ? 'bg-g' : 'bg-gr'}">${esc(m.status)}</span></td>
-      <td><button class="btn btn-xs btn-ghost" onclick="handleViewMember('${esc(m.user_id)}')">View</button></td>
+      <td><span class="badge ${m.archived ? 'bg-gr' : m.status === 'Active' ? 'bg-g' : m.status === 'Suspended' ? 'bg-r' : 'bg-y'}">${m.archived ? '🗄 Archived' : esc(m.status)}</span></td>
+      <td><button class="btn btn-xs btn-ghost act-btn" onclick="openActMenu(event,'${esc(m.user_id)}')">Actions ▾</button></td>
     </tr>`;
-  }).join('') : emptyRow(9, (ad().members || []).length ? 'No members match your filters.' : 'No members yet. Members appear here once they register.');
+  }).join('') : emptyRow(9, membersSource().length ? 'No members match your filters.' : 'No members yet. Click "+ Add Member" or share the registration link.');
   setText('a-mem-footer', all.length ? `Showing ${start + 1}–${start + rows.length} of ${fmtInt(all.length)} member${all.length === 1 ? '' : 's'}` : '');
   let btns = `<button class="btn btn-xs btn-ghost" onclick="handlePagination(-1)" ${aMembersPage <= 1 ? 'disabled' : ''}>← Prev</button>`;
   for (let p = Math.max(1, aMembersPage - 2); p <= Math.min(pages, aMembersPage + 2); p++) {
@@ -1485,21 +1526,21 @@ function renderMembersTable() {
 }
 function handlePagination(dir) { aMembersPage += dir; renderMembersTable(); }
 function handleViewMember(userId) {
-  const m = (ad().members || []).find(x => x.user_id === userId); if (!m) return;
+  const m = membersSource().find(x => x.user_id === userId); if (!m) return;
   const att = m.attendance || {};
   setHtml('a-md-body', [
+    ['Account type', { member: 'Member', admin: 'Admin', super_admin: 'Super Admin' }[m.role] || 'Member'],
     ['Member ID', m.member_id], ['Email', m.email + (m.email_confirmed ? ' ✓' : ' (not confirmed)')], ['Province', m.province],
-    ['Company', m.company], ['Position', m.position], ['Expertise', m.expertise], ['Level', m.level], ['Status', m.status],
+    ['Phone', m.phone], ['Company', m.company], ['Department', m.department], ['Position', m.position], ['Expertise', m.expertise], ['Level', m.level],
+    ['Status', m.archived ? `Archived ${fmtDate(m.archived_at)}` : m.status],
     ['Sessions', `${fmtInt(att.registered)} registered · ${fmtInt(att.attended)} attended`], ['Certificates', fmtInt(m.certificates)],
     ['Registered', fmtDate(m.registered_at)], ['Last sign-in', m.last_sign_in ? `${fmtDate(m.last_sign_in)} ${fmtTime(m.last_sign_in)}` : 'Never']
   ].map(([k, v]) => `<div style="display:flex;gap:10px;"><div style="font-size:12px;color:var(--t3);min-width:110px;">${k}</div><div style="font-size:13px;font-weight:600;">${esc(v || '—')}</div></div>`).join(''));
   setText('a-md-title', m.full_name);
+  const acts = memberActions(m).filter(a => a.key !== 'view');
+  setHtml('a-md-footer', acts.map(a => `<button class="btn ${a.cls === 'danger' ? 'btn-danger' : a.cls === 'good' ? 'btn-green' : 'btn-outline'}" onclick="closeMo('a-member-detail');${a.call}">${a.label}</button>`).join('')
+    + `<button class="btn btn-ghost" onclick="closeMo('a-member-detail')">Close</button>`);
   openMo('a-member-detail');
-}
-function handleAddMember() {
-  const link = APP_URL + '#register';
-  navigator.clipboard?.writeText(link).catch(() => {});
-  showToast('Members create their own accounts. The registration link was copied — share it with the new member.', 'info', 6000);
 }
 function handleAdminSearch(query) {
   aShowPage('members');
@@ -1811,6 +1852,236 @@ function openPaymentDetail(transactionId) {
 }
 
 // ════════════════════════════════════════════════
+// MEMBER MANAGEMENT  (functions in 06_member_management.sql)
+//   Super admin  → View · Edit · Archive · Restore · add members/admins
+//   Normal admin → View · Remove (archive) · add members
+// ════════════════════════════════════════════════
+function renderAdminIdentity() {
+  setText('a-sb-role', isSuperAdmin() ? '🛡 Super Admin Panel' : '🛡 Admin Panel');
+}
+function memberActions(m) {
+  const sup = isSuperAdmin(), id = esc(m.user_id);
+  const acts = [{ key: 'view', label: '👁 View details', call: `handleViewMember('${id}')` }];
+  if (!adminMembers) return acts;                           // 06 not installed yet
+  if (m.archived) {
+    if (sup) acts.push({ key: 'restore', label: '♻ Restore', cls: 'good', call: `restoreMember('${id}')` });
+    return acts;
+  }
+  if (sup) acts.push({ key: 'edit', label: '✏ Edit', call: `openMemberForm('${id}')` });
+  if (sup || m.role === 'member') acts.push({ key: 'archive', label: sup ? '🗄 Archive' : '🗑 Remove', cls: 'danger', call: `openArchiveMember('${id}')` });
+  return acts;
+}
+function openActMenu(ev, userId) {
+  ev.stopPropagation();
+  const menu = document.getElementById('act-menu');
+  const m = membersSource().find(x => x.user_id === userId); if (!m || !menu) return;
+  if (menu.classList.contains('open') && menu.dataset.user === userId) { closeActMenu(); return; }
+  const acts = memberActions(m);
+  menu.innerHTML = `<div class="act-head">${esc(m.full_name || m.email)}</div>` + acts.map((a, i) =>
+    (a.cls === 'danger' || a.cls === 'good') && i ? `<div class="act-sep"></div><button class="act-item ${a.cls}" onclick="closeActMenu();${a.call}">${a.label}</button>`
+      : `<button class="act-item ${a.cls || ''}" onclick="closeActMenu();${a.call}">${a.label}</button>`).join('');
+  menu.dataset.user = userId;
+  menu.classList.add('open');
+  const r = ev.currentTarget.getBoundingClientRect();
+  const w = menu.offsetWidth, h = menu.offsetHeight;
+  menu.style.left = Math.max(8, Math.min(r.right - w, window.innerWidth - w - 8)) + 'px';
+  menu.style.top = (r.bottom + h + 8 > window.innerHeight ? r.top - h - 4 : r.bottom + 4) + 'px';
+}
+function closeActMenu() { document.getElementById('act-menu')?.classList.remove('open'); }
+document.addEventListener('click', e => { if (!e.target.closest('#act-menu')) closeActMenu(); });
+window.addEventListener('scroll', closeActMenu, true);
+window.addEventListener('resize', closeActMenu);
+
+// ── Add / Edit Member page ──
+const MF_ACTIONS_HTML = document.getElementById('mf-actions')?.innerHTML || '';
+function openMemberForm(userId) {
+  setHtml('mf-actions', MF_ACTIONS_HTML);
+  if (!adminMembers) { showToast('Run supabase/06_member_management.sql first to enable adding members.', 'error', 6000); return; }
+  const m = userId ? membersSource().find(x => x.user_id === userId) : null;
+  if (userId && (!m || !isSuperAdmin())) { showToast('Only a super admin can edit members.', 'error'); return; }
+  memberFormUserId = m ? m.user_id : null;
+  const sup = isSuperAdmin();
+  const v = (id, val) => { const el = document.getElementById(id); if (el) el.value = val ?? ''; };
+  setText('mf-heading', m ? `Edit ${m.role === 'member' ? 'Member' : 'Admin'}` : 'Add Member');
+  setText('mf-subheading', m ? `Changes are saved to ${m.full_name}'s account.` : 'Create an account for a new member. They can sign in right away with the email and password you set.');
+  v('mf-name', m?.full_name); v('mf-email', m?.email); v('mf-phone', m?.phone);
+  v('mf-pass', m ? '' : ''); v('mf-province', m?.province || ''); v('mf-company', m?.company);
+  v('mf-department', m?.department); v('mf-position', m?.position); v('mf-expertise', m?.expertise || '');
+  v('mf-level', m?.level || 'Entry'); v('mf-status', m && !m.archived ? m.status : 'Active');
+  v('mf-role', m?.role || 'member'); v('mf-mid', m ? m.member_id : '');
+  const email = document.getElementById('mf-email'); email.readOnly = !!m; email.style.background = m ? 'var(--bg)' : '';
+  setText('mf-email-hint', m ? 'The sign-in email cannot be changed here.' : 'They sign in with this email.');
+  setText('mf-pass-label', m ? 'New Password' : 'Password *');
+  document.getElementById('mf-pass').placeholder = m ? 'Leave blank to keep the current password' : 'At least 6 characters';
+  setText('mf-pass-hint', m ? 'Only fill this in to reset their password.' : 'Share this password with the member. They can change it anytime with "Forgot password?".');
+  document.getElementById('mf-confirm-wrap').style.display = m ? 'none' : '';
+  document.getElementById('mf-confirm').checked = true;
+  document.getElementById('mf-access-card').style.display = sup ? '' : 'none';
+  document.querySelectorAll('.mf-super-only').forEach(el => el.style.display = sup ? '' : 'none');
+  document.getElementById('mf-save-another').style.display = m ? 'none' : '';
+  setText('mf-save', m ? 'Save Changes' : 'Save Member');
+  document.getElementById('mf-err').style.display = 'none';
+  document.getElementById('mf-done').style.display = 'none';
+  if (!m) generateMemberPassword();
+  onMemberRoleChange();
+  aShowPage('member-form');
+  setText('a-page-title', m ? 'Edit Member' : 'Add Member');
+}
+function generateMemberPassword() {
+  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789';
+  const rnd = crypto.getRandomValues(new Uint32Array(10));
+  document.getElementById('mf-pass').value = 'GC-' + Array.from(rnd, n => chars[n % chars.length]).join('');
+}
+function onMemberRoleChange() {
+  const role = document.getElementById('mf-role').value;
+  const hints = { member: 'Members use the member portal.', admin: 'Admins can manage sessions, attendance and payments, and add or remove members.', super_admin: 'Super admins can do everything, including editing members and creating admins.' };
+  setText('mf-role-hint', hints[role]);
+  const editingMember = memberFormUserId && membersSource().find(x => x.user_id === memberFormUserId);
+  const mid = document.getElementById('mf-mid');
+  const roleChanges = editingMember && (editingMember.role === 'member') !== (role === 'member');
+  mid.disabled = role !== 'member' || roleChanges;
+  if (mid.disabled) mid.value = editingMember && !roleChanges ? editingMember.member_id : '';
+  setText('mf-mid-hint', role !== 'member' || roleChanges
+    ? (roleChanges ? 'A new ID is assigned because the account type changes.' : 'Admins get the next ADM-YYYY-NNNN ID.')
+    : (editingMember ? 'Change only if needed — must be unique.' : 'Blank = next HRC-YYYY-NNNN number.'));
+  updateMemberPreview();
+}
+function updateMemberPreview() {
+  const g = id => (document.getElementById(id)?.value || '').trim();
+  const name = g('mf-name'), role = isSuperAdmin() ? g('mf-role') : 'member';
+  setText('mf-pv-av', initialsOf(name));
+  setText('mf-pv-name', name || 'New member');
+  setText('mf-pv-id', g('mf-mid') || (memberFormUserId ? '—' : 'ID assigned on save'));
+  setText('mf-pv-email', g('mf-email'));
+  setText('mf-pv-position', g('mf-position'));
+  const exp = g('mf-expertise');
+  setHtml('mf-pv-badges', (ROLE_BADGE[role] || '<span class="badge bg-b">👤 Member</span>')
+    + (exp ? areaBadge(exp) : '')
+    + (isSuperAdmin() ? `<span class="badge bg-y">${esc(g('mf-level') || 'Entry')}</span>` : ''));
+}
+async function saveMemberForm(addAnother) {
+  const g = id => (document.getElementById(id)?.value || '').trim();
+  const err = document.getElementById('mf-err');
+  const fail = t => { err.textContent = t; err.style.display = 'block'; err.scrollIntoView({ block: 'center', behavior: 'smooth' }); };
+  err.style.display = 'none';
+  const editing = !!memberFormUserId, sup = isSuperAdmin();
+  if (!g('mf-name')) return fail('Please enter the full name.');
+  if (!editing && !EMAIL_REGEX.test(g('mf-email'))) return fail('Please enter a valid email address.');
+  if (!editing && g('mf-pass').length < 6) return fail('The password must be at least 6 characters.');
+  if (editing && g('mf-pass') && g('mf-pass').length < 6) return fail('The new password must be at least 6 characters.');
+
+  const data = { full_name: g('mf-name'), phone: g('mf-phone'), province: g('mf-province'), company: g('mf-company'),
+                 department: g('mf-department'), position: g('mf-position'), expertise: g('mf-expertise') };
+  if (sup) Object.assign(data, { role: g('mf-role'), level: g('mf-level'), status: g('mf-status') });
+  if (sup && !document.getElementById('mf-mid').disabled && g('mf-mid')) data.member_id = g('mf-mid');
+  if (g('mf-pass')) data.password = g('mf-pass');
+
+  const btns = document.querySelectorAll('#mf-actions button'); btns.forEach(b => b.disabled = true);
+  try {
+    if (editing) {
+      await rpc('admin_update_member', { p_user: memberFormUserId, p_data: data });
+      showToast(`${data.full_name} was updated.`, 'success');
+      await loadAdminData();
+      aShowPage('members');
+      return;
+    }
+    data.email = g('mf-email').toLowerCase();
+    data.password = g('mf-pass');
+    data.confirm_email = document.getElementById('mf-confirm').checked;
+    const r = await rpc('admin_create_member', { p_data: data });
+    await loadAdminData();
+    const done = document.getElementById('mf-done');
+    done.innerHTML = `<div style="font-family:var(--font-h);font-size:14px;font-weight:700;color:var(--green);margin-bottom:6px;">✅ ${esc(data.full_name)} was added (${esc(r.member_id)})</div>
+      <div style="font-size:13px;color:var(--t2);line-height:1.7;">Share these sign-in details with them:<br>
+      ${r.role === 'member' ? 'Email' : 'Admin ID'}: <strong>${esc(r.role === 'member' ? r.email : r.member_id)}</strong><br>
+      Password: <strong>${esc(data.password)}</strong></div>
+      <button class="btn btn-ghost btn-sm" style="margin-top:9px;" onclick="copyNewMemberDetails(this)" data-text="${esc(`GameChanger sign-in\n${r.role === 'member' ? 'Email' : 'Admin ID'}: ${r.role === 'member' ? r.email : r.member_id}\nPassword: ${data.password}\n${APP_URL}`)}">📋 Copy sign-in details</button>
+      ${data.confirm_email ? '' : '<div style="font-size:12px;color:#B45309;margin-top:8px;">Their email is not confirmed yet — they must use the confirmation link before signing in.</div>'}`;
+    done.style.display = 'block';
+    showToast(`${data.full_name} was added.`, 'success');
+    if (addAnother) {
+      ['mf-name', 'mf-email', 'mf-phone', 'mf-position', 'mf-mid'].forEach(id => { document.getElementById(id).value = ''; });
+      generateMemberPassword();
+      updateMemberPreview();
+      document.getElementById('mf-name').focus();
+    } else {
+      setHtml('mf-actions', `<button class="btn btn-ghost" onclick="openMemberForm()">+ Add another</button><button class="btn btn-red" onclick="aShowPage('members')">Done</button>`);
+    }
+    done.scrollIntoView({ block: 'center', behavior: 'smooth' });
+  } catch (e) {
+    fail(friendlyAuthError(e));
+  } finally {
+    btns.forEach(b => b.disabled = false);
+  }
+}
+function copyNewMemberDetails(btn) {
+  navigator.clipboard?.writeText(btn.dataset.text).then(() => showToast('Sign-in details copied.', 'success', 1800)).catch(() => {});
+}
+
+// ── Archive (remove) / Restore ──
+function openArchiveMember(userId) {
+  const m = membersSource().find(x => x.user_id === userId); if (!m) return;
+  archiveTargetId = userId;
+  const sup = isSuperAdmin();
+  setText('aa-title', sup ? `🗄 Archive ${m.full_name}` : `🗑 Remove ${m.full_name}`);
+  setText('aa-text', `${m.full_name} (${m.member_id || m.email}) will be hidden from the member list and will no longer be able to sign in. `
+    + 'Their attendance and certificates are kept.' + (sup ? ' You can restore the account later from the "Archived" filter.' : ' A super admin can restore the account if needed.'));
+  document.getElementById('aa-reason').value = '';
+  document.getElementById('aa-err').style.display = 'none';
+  setText('aa-btn', sup ? 'Archive' : 'Remove');
+  openMo('a-archive-modal');
+}
+async function confirmArchiveMember() {
+  const btn = document.getElementById('aa-btn'); btn.disabled = true;
+  try {
+    await rpc('admin_archive_member', { p_user: archiveTargetId, p_reason: document.getElementById('aa-reason').value.trim() || null });
+    closeMo('a-archive-modal');
+    showToast(isSuperAdmin() ? 'Account archived.' : 'Member removed.', 'info');
+    await loadAdminData();
+  } catch (e) {
+    const err = document.getElementById('aa-err'); err.textContent = friendlyAuthError(e); err.style.display = 'block';
+  } finally { btn.disabled = false; }
+}
+async function restoreMember(userId) {
+  const m = membersSource().find(x => x.user_id === userId); if (!m) return;
+  if (!confirm(`Restore ${m.full_name}? They will be able to sign in again.`)) return;
+  try {
+    await rpc('admin_restore_member', { p_user: userId });
+    showToast(`${m.full_name} was restored.`, 'success');
+    await loadAdminData();
+  } catch (e) { showToast(friendlyAuthError(e), 'error', 5000); }
+}
+
+// ── Admin: My Profile ──
+function renderAdminProfile() {
+  const me = adminMe;
+  if (!me) {
+    setText('a-prof-name', loggedInUser?.name || '—'); setText('a-prof-id', loggedInUser?.id || '—');
+    setText('a-prof-av', loggedInUser?.initials || '');
+    setHtml('a-prof-perms', 'Run <strong>06_member_management.sql</strong> in Supabase to enable profiles and member management.');
+    return;
+  }
+  setText('a-prof-av', initialsOf(me.full_name));
+  setText('a-prof-name', me.full_name || '—');
+  setText('a-prof-id', me.member_id || '—');
+  setHtml('a-prof-role', me.is_super ? ROLE_BADGE.super_admin : ROLE_BADGE.admin);
+  setText('a-prof-since', fmtDate(me.created_at));
+  setText('a-prof-last', me.last_sign_in ? `${fmtDate(me.last_sign_in)} ${fmtTime(me.last_sign_in)}` : '—');
+  [['fullname', me.full_name], ['email', me.email], ['phone', me.phone], ['province', me.province], ['company', me.company],
+   ['department', me.department], ['position', me.position]].forEach(([k, v]) => setText('a-prof-' + k, v || '—'));
+  setHtml('a-prof-perms', me.is_super
+    ? '✅ Add members and admins<br>✅ Edit any member (details, level, status, password, account type)<br>✅ Archive and restore accounts<br>✅ Manage sessions, attendance, certificates and payments'
+    : '✅ Add members<br>✅ Remove (archive) members<br>✅ Manage sessions, attendance, certificates and payments<br>🔒 Editing members and creating admins is for super admins');
+}
+async function sendMyPasswordReset() {
+  const email = adminMe?.email || loggedInUser?.email;
+  if (!email) return;
+  const { error } = await sb.auth.resetPasswordForEmail(email, { redirectTo: APP_URL });
+  if (error) showToast(friendlyAuthError(error), 'error', 6000);
+  else showToast(`A password reset link was sent to ${email}.`, 'success', 5000);
+}
+
+// ════════════════════════════════════════════════
 // EXPORT — builds a CSV file from the data on screen
 // ════════════════════════════════════════════════
 function downloadCSV(filename, headers, rows) {
@@ -1882,7 +2153,8 @@ function showBadge(id, value) {
 function updateMemberBadges() { showBadge('m-bell-dot', notificationItems('member').length > 0); }
 function updateAdminBadges() {
   const o = ad().overview || {};
-  showBadge('a-nb-members', Number(o.total_members) ? fmtCompact(o.total_members).replace('+', '') : '');
+  const current = adminMembers ? adminMembers.filter(m => m.role === 'member' && !m.archived).length : Number(o.total_members);
+  showBadge('a-nb-members', current ? fmtCompact(current).replace('+', '') : '');
   showBadge('a-nb-sync', Number(o.awaiting_sync) ? String(o.awaiting_sync) : '');
   showBadge('a-bell-dot', notificationItems('admin').length > 0);
 }
