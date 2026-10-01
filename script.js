@@ -35,7 +35,8 @@ const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBh
 // Where the links inside Supabase emails (confirm sign-up, reset password)
 // bring the user back to. This exact URL must also be added in:
 //   Authentication → URL Configuration → Redirect URLs
-const APP_URL = window.location.origin + window.location.pathname;
+// (index.html is dropped so every page address gives the same link)
+const APP_URL = window.location.origin + window.location.pathname.replace(/index\.html$/i, '');
 
 // Read the URL BEFORE the Supabase client consumes it, so we know whether the
 // user just clicked a "reset password" or "confirm email" link.
@@ -43,8 +44,9 @@ const ARRIVED_FROM = (() => {
   const h = new URLSearchParams(window.location.hash.slice(1));
   const q = new URLSearchParams(window.location.search);
   return {
-    type:  h.get('type')  || q.get('type'),
-    error: h.get('error_description') || q.get('error_description')
+    type:    h.get('type')  || q.get('type'),
+    error:   h.get('error_description') || q.get('error_description'),
+    message: h.get('message') || q.get('message')
   };
 })();
 
@@ -56,7 +58,11 @@ if (window.location.protocol === 'file:') {
 }
 
 // Named "sb" so it doesn't clash with the global "supabase" library object.
-const sb = window.supabase.createClient(new URL(SUPABASE_URL).origin, SUPABASE_ANON_KEY.trim());
+// flowType 'implicit': the link in a reset / confirmation email works even
+// when it is opened on a different phone or computer than the one used to ask.
+const sb = window.supabase.createClient(new URL(SUPABASE_URL).origin, SUPABASE_ANON_KEY.trim(), {
+  auth: { flowType: 'implicit', detectSessionInUrl: true, persistSession: true, autoRefreshToken: true }
+});
 
 // ════════════════════════════════════════════════
 // STATE
@@ -224,6 +230,8 @@ function friendlyAuthError(error) {
   if (m.includes('banned') || m.includes('archived')) return 'This account has been archived. Please contact an HR Calabarzon admin.';
   if (m.includes('email not confirmed'))        return 'Please confirm your email first — open the link we sent to your inbox (check Spam too).';
   if (m.includes('already registered'))         return 'This email is already registered. Sign in instead, or use "Forgot password?".';
+  if (m.includes('security purposes') || m.includes('only request this after'))
+    return 'Please wait about a minute before requesting another link.';
   if (m.includes('rate limit') || m.includes('too many') || (error && error.status === 429))
     return 'Too many emails were requested. Please wait a while and try again. (Admin: Supabase\'s built-in mailer allows only a few emails per hour — set up custom SMTP.)';
   if (m.includes('not authorized') || m.includes('error sending'))
@@ -493,40 +501,67 @@ function maskEmail(email) {
   return (u.length <= 2 ? u[0] + '*' : u.slice(0, 2) + '*'.repeat(Math.max(1, u.length - 2))) + '@' + d;
 }
 
+// Finds the REGISTERED email of the account (07_password_reset.sql).
+// Falls back to the older lookups if 07 has not been run yet.
+async function findResetTarget(input) {
+  const { data, error } = await sb.rpc('password_reset_target', { p_identifier: input });
+  if (!error && data) return data;
+  if (isAdminId(input)) {
+    const r = await sb.rpc('get_login_email', { p_member_id: input.toUpperCase() });
+    if (r.error) throw r.error;
+    return r.data ? { found: true, admin_id: true, email: r.data } : { found: false, admin_id: true };
+  }
+  const r = await sb.rpc('email_status', { p_email: input.toLowerCase() });
+  return { found: r.error ? true : r.data !== 'none', admin_id: false, email: input.toLowerCase() };
+}
+
+let resetCooldownUntil = 0;
+function startResetCooldown(btn) {
+  resetCooldownUntil = Date.now() + 60000;
+  const tick = () => {
+    const left = Math.ceil((resetCooldownUntil - Date.now()) / 1000);
+    if (left <= 0) { btn.disabled = false; btn.textContent = 'Send reset link'; return; }
+    btn.disabled = true; btn.textContent = `Resend in ${left}s`;
+    setTimeout(tick, 1000);
+  };
+  tick();
+}
+
 async function sendResetLink() {
   const input = document.getElementById('fp-email').value.trim();
   const btn = document.getElementById('fp-btn');
-  if (!input) { showFpMsg('Please enter your email address or Admin ID.', false); return; }
+  if (!input) { showFpMsg('Please enter your registered email address or Admin ID.', false); return; }
+  if (!isAdminId(input) && !EMAIL_REGEX.test(input.toLowerCase())) {
+    showFpMsg('Enter the email address you registered with (members), or your Admin ID in the format ADM-YYYY-NNNN (admins).', false);
+    return;
+  }
+  if (Date.now() < resetCooldownUntil) return;
 
-  btn.disabled = true; const orig = btn.textContent; btn.textContent = 'Sending...';
+  btn.disabled = true; btn.textContent = 'Sending...';
+  let sent = false;
   try {
-    let email = input.toLowerCase();
-    let viaAdminId = false;
-
-    if (isAdminId(input)) {
-      const { data, error } = await sb.rpc('get_login_email', { p_member_id: input.toUpperCase() });
-      if (error) throw error;
-      if (!data) { showFpMsg('Admin ID not found.', false); return; }
-      email = data; viaAdminId = true;
-    } else {
-      if (!EMAIL_REGEX.test(email)) { showFpMsg('Please enter a valid email address.', false); return; }
-      // Tell the user plainly if there is no account for this email
-      const { data: status, error } = await sb.rpc('email_status', { p_email: email });
-      if (!error && status === 'none') {
-        showFpMsg('No account is registered with this email. Check the spelling or create an account.', false);
-        return;
-      }
+    const target = await findResetTarget(input);
+    if (!target.found) {
+      showFpMsg(target.admin_id ? 'That Admin ID was not found. Check the format ADM-YYYY-NNNN.'
+                                : 'No account is registered with this email. Check the spelling, or create an account.', false);
+      return;
+    }
+    if (target.archived) {
+      showFpMsg('This account has been archived, so its password can\'t be reset. Please contact an HR Calabarzon admin.', false);
+      return;
     }
 
-    const { error } = await sb.auth.resetPasswordForEmail(email, { redirectTo: APP_URL });
+    const { error } = await sb.auth.resetPasswordForEmail(target.email, { redirectTo: APP_URL });
     if (error) { showFpMsg(friendlyAuthError(error), false); return; }
 
-    const shown = viaAdminId ? maskEmail(email) : email;
-    showFpMsg(`✓ Reset link sent to ${shown}. Open it on this device to set a new password (check Spam too).`, true);
+    sent = true;
+    const shown = target.admin_id ? maskEmail(target.email) : target.email;
+    showFpMsg(`✓ A reset link was sent to the registered email ${shown}. Open the email and click the link to set a new password (check Spam/Promotions too). The link works once and expires after 1 hour.`, true);
+    startResetCooldown(btn);
   } catch (e) {
     showFpMsg(friendlyAuthError(e), false);
   } finally {
-    btn.disabled = false; btn.textContent = orig;
+    if (!sent) { btn.disabled = false; btn.textContent = 'Send reset link'; }
   }
 }
 
@@ -669,7 +704,9 @@ sb.auth.onAuthStateChange((event) => {
     showRegisterPage();
   }
   if (ARRIVED_FROM.error) {
-    showToast(`Link problem: ${ARRIVED_FROM.error}. Request a new link.`, 'error', 7000);
+    showToast(/expired|invalid/i.test(ARRIVED_FROM.error)
+      ? 'That link has expired or was already used. Please request a new one with "Forgot password?".'
+      : `Link problem: ${ARRIVED_FROM.error}. Request a new link.`, 'error', 8000);
     history.replaceState(null, '', APP_URL);
     return;
   }
@@ -681,12 +718,14 @@ sb.auth.onAuthStateChange((event) => {
     try {
       await startSession(session.user, null);
       if (ARRIVED_FROM.type === 'signup') showToast('Email confirmed — your account is active! 🎉', 'success', 5000);
+      if (ARRIVED_FROM.type === 'email_change') showToast('Your email address was updated. Use it the next time you sign in.', 'success', 6000);
+      if (ARRIVED_FROM.message) showToast(ARRIVED_FROM.message, 'info', 8000);
     } catch (e) {
       console.error(e);
       showLoginErr(friendlyAuthError(e));
     }
   }
-  if (ARRIVED_FROM.type) history.replaceState(null, '', APP_URL);
+  if (ARRIVED_FROM.type || ARRIVED_FROM.message) history.replaceState(null, '', APP_URL);
 })();
 
 // ════════════════════════════════════════════════
@@ -1213,6 +1252,7 @@ function handleEditProfile() {
   document.getElementById('ep-department').value = me.department || '';
   document.getElementById('ep-position').value = me.position || '';
   document.getElementById('ep-phone').value = me.phone || '';
+  document.getElementById('ep-email').value = me.email || loggedInUser?.email || '';
   document.getElementById('ep-err').style.display = 'none';
   openMo('m-edit-profile');
 }
@@ -1220,9 +1260,26 @@ async function saveProfile() {
   const val = id => document.getElementById(id).value.trim();
   const err = document.getElementById('ep-err');
   if (!val('ep-name')) { err.textContent = 'Please enter your full name.'; err.style.display = 'block'; return; }
+  if (val('ep-email') && !EMAIL_REGEX.test(val('ep-email').toLowerCase())) { err.textContent = 'Please enter a valid email address.'; err.style.display = 'block'; return; }
   const btn = document.getElementById('ep-btn'); btn.disabled = true; btn.textContent = 'Saving...';
   try {
     await rpc('member_update_profile', { p_data: { full_name: val('ep-name'), province: val('ep-province'), company: val('ep-company'), department: val('ep-department'), position: val('ep-position'), phone: val('ep-phone') } });
+    // sign-in email (this is where "Forgot password?" sends the reset link)
+    const newEmail = val('ep-email').toLowerCase();
+    const oldEmail = ((currentRole === 'admin' ? adminMe?.email : md().me?.email) || loggedInUser.email || '').toLowerCase();
+    if (newEmail && newEmail !== oldEmail) {
+      if (currentRole === 'admin' && isSuperAdmin()) {
+        await rpc('admin_set_email', { p_user: adminMe.user_id, p_email: newEmail });
+        loggedInUser.email = newEmail;
+        showToast(`Sign-in email changed to ${newEmail}.`, 'success', 5000);
+      } else {
+        const check = await validateEmail(newEmail, { checkDuplicate: true });
+        if (!check.ok) throw new Error(check.msg);
+        const { error } = await sb.auth.updateUser({ email: newEmail }, { emailRedirectTo: APP_URL });
+        if (error) throw error;
+        showToast(`To finish, open the confirmation link sent to ${newEmail} (a notice may also go to your current email). Until then, keep using ${oldEmail}.`, 'info', 9000);
+      }
+    }
     closeMo('m-edit-profile');
     loggedInUser.name = val('ep-name');
     loggedInUser.initials = makeInitials(loggedInUser.name);
@@ -1909,8 +1966,7 @@ function openMemberForm(userId) {
   v('mf-department', m?.department); v('mf-position', m?.position); v('mf-expertise', m?.expertise || '');
   v('mf-level', m?.level || 'Entry'); v('mf-status', m && !m.archived ? m.status : 'Active');
   v('mf-role', m?.role || 'member'); v('mf-mid', m ? m.member_id : '');
-  const email = document.getElementById('mf-email'); email.readOnly = !!m; email.style.background = m ? 'var(--bg)' : '';
-  setText('mf-email-hint', m ? 'The sign-in email cannot be changed here.' : 'They sign in with this email.');
+  setText('mf-email-hint', m ? 'Sign-in email. "Forgot password?" sends the reset link here, so it must be a real inbox.' : 'They sign in with this email. Password reset links are sent here.');
   setText('mf-pass-label', m ? 'New Password' : 'Password *');
   document.getElementById('mf-pass').placeholder = m ? 'Leave blank to keep the current password' : 'At least 6 characters';
   setText('mf-pass-hint', m ? 'Only fill this in to reset their password.' : 'Share this password with the member. They can change it anytime with "Forgot password?".');
@@ -1966,7 +2022,7 @@ async function saveMemberForm(addAnother) {
   err.style.display = 'none';
   const editing = !!memberFormUserId, sup = isSuperAdmin();
   if (!g('mf-name')) return fail('Please enter the full name.');
-  if (!editing && !EMAIL_REGEX.test(g('mf-email'))) return fail('Please enter a valid email address.');
+  if (!EMAIL_REGEX.test(g('mf-email').toLowerCase())) return fail('Please enter a valid email address.');
   if (!editing && g('mf-pass').length < 6) return fail('The password must be at least 6 characters.');
   if (editing && g('mf-pass') && g('mf-pass').length < 6) return fail('The new password must be at least 6 characters.');
 
@@ -1980,6 +2036,10 @@ async function saveMemberForm(addAnother) {
   try {
     if (editing) {
       await rpc('admin_update_member', { p_user: memberFormUserId, p_data: data });
+      const before = membersSource().find(x => x.user_id === memberFormUserId);
+      if (before && g('mf-email').toLowerCase() !== String(before.email || '').toLowerCase()) {
+        await rpc('admin_set_email', { p_user: memberFormUserId, p_email: g('mf-email').toLowerCase() });
+      }
       showToast(`${data.full_name} was updated.`, 'success');
       await loadAdminData();
       aShowPage('members');

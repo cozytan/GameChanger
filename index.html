@@ -382,6 +382,7 @@
     <div class="fg2"><div class="fl2">Department</div><input class="fi2" id="ep-department"></div>
     <div class="fg2"><div class="fl2">Position</div><input class="fi2" id="ep-position"></div>
     <div class="fg2"><div class="fl2">Phone</div><input class="fi2" id="ep-phone"></div>
+    <div class="fg2" style="grid-column:1/-1;"><div class="fl2">Sign-in Email</div><input class="fi2" id="ep-email" type="email"><div style="font-size:11px;color:var(--t3);margin-top:4px;">"Forgot password?" sends the reset link to this address, so it must be an inbox you can open.</div></div>
   </div>
   <div id="ep-err" style="display:none;background:var(--red-l);border-radius:var(--r2);padding:10px 13px;margin-top:8px;font-size:12px;color:var(--red-d);"></div></div>
   <div class="mf"><button class="btn btn-ghost" onclick="closeMo('m-edit-profile')">Cancel</button><button class="btn btn-primary" id="ep-btn" onclick="saveProfile()">Save</button></div></div>
@@ -801,7 +802,7 @@
 <div class="mo" id="forgot-modal">
   <div class="modal"><div class="mh"><div class="mt">🔑 Reset your password</div><button class="mc" onclick="closeMo('forgot-modal')">✕</button></div>
   <div class="mb">
-    <p style="font-size:13px;color:var(--t2);line-height:1.6;margin-bottom:12px;">Enter your registered email address or Admin ID. We'll send a reset link to the email on file.</p>
+    <p style="font-size:13px;color:var(--t2);line-height:1.6;margin-bottom:12px;"><strong>Members:</strong> enter the email address you registered with.<br><strong>Admins:</strong> enter your Admin ID (ADM-YYYY-NNNN) or your email.<br>We'll send a reset link to the account's registered email.</p>
     <input class="fi member-mode" type="text" id="fp-email" placeholder="yourname@email.com or ADM-YYYY-NNNN" autocomplete="email" onkeydown="if(event.key==='Enter')sendResetLink()">
     <div id="fp-msg" style="display:none;font-size:12px;margin-top:10px;padding:9px 12px;border-radius:9px;"></div>
   </div>
