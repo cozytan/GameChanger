@@ -354,3 +354,8 @@ body{font-family:var(--font-b);background:var(--bg);color:var(--t1);min-height:1
 .mf-lbl{font-size:11px;color:var(--t3);font-weight:600;text-transform:uppercase;margin-bottom:3px;}
 tr.is-archived td{opacity:.6;}
 @media (max-width:900px){.mf-layout{grid-template-columns:1fr;}}
+
+/* field validation */
+.fi2.is-invalid,.fs2.is-invalid{border-color:var(--red);background:#FFF7F7;}
+.fi2.is-invalid:focus,.fs2.is-invalid:focus{box-shadow:0 0 0 3px rgba(229,57,53,.12);}
+.fld-err{display:none;font-size:11px;font-weight:600;color:var(--red-d);margin-top:4px;line-height:1.4;}

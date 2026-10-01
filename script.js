@@ -1254,13 +1254,16 @@ function handleEditProfile() {
   document.getElementById('ep-phone').value = me.phone || '';
   document.getElementById('ep-email').value = me.email || loggedInUser?.email || '';
   document.getElementById('ep-err').style.display = 'none';
+  clearFormErrors(Object.keys(profileFormRules()));
+  attachLiveValidation(profileFormRules);
   openMo('m-edit-profile');
 }
 async function saveProfile() {
   const val = id => document.getElementById(id).value.trim();
   const err = document.getElementById('ep-err');
-  if (!val('ep-name')) { err.textContent = 'Please enter your full name.'; err.style.display = 'block'; return; }
-  if (val('ep-email') && !EMAIL_REGEX.test(val('ep-email').toLowerCase())) { err.textContent = 'Please enter a valid email address.'; err.style.display = 'block'; return; }
+  err.style.display = 'none';
+  if (!runValidation(profileFormRules())) { err.textContent = 'Please fix the fields marked in red.'; err.style.display = 'block'; return; }
+  if (val('ep-phone')) document.getElementById('ep-phone').value = normalizePhPhone(val('ep-phone')).value;
   const btn = document.getElementById('ep-btn'); btn.disabled = true; btn.textContent = 'Saving...';
   try {
     await rpc('member_update_profile', { p_data: { full_name: val('ep-name'), province: val('ep-province'), company: val('ep-company'), department: val('ep-department'), position: val('ep-position'), phone: val('ep-phone') } });
@@ -1294,6 +1297,7 @@ async function saveProfile() {
       await loadMemberData();
     }
   } catch (e) {
+    showServerFieldError(e, 'ep');
     err.textContent = friendlyAuthError(e); err.style.display = 'block';
   } finally {
     btn.disabled = false; btn.textContent = 'Save';
@@ -1909,9 +1913,157 @@ function openPaymentDetail(transactionId) {
 }
 
 // ════════════════════════════════════════════════
+// FORM VALIDATION  (same rules as 08_validation.sql)
+// Every field shows its own red message under the input.
+// ════════════════════════════════════════════════
+const NAME_BAD_CHARS = /[0-9!@#$%^&*()_+=\[\]{};:"\\|<>/?~`,]/;
+const ID_REGEX = /^HRC-\d{4}-\d{4}$/i;
+
+// Philippine mobile: +63 and exactly 10 digits starting with 9.
+// Accepts 09171234567 · +63 917 123 4567 · 639171234567 · 9171234567
+function normalizePhPhone(raw) {
+  const s = String(raw || '').trim();
+  if (!s) return { ok: false, empty: true, msg: 'Phone number is required.' };
+  if (/[^0-9+()\s.-]/.test(s)) return { ok: false, msg: 'Use numbers only, e.g. +63 917 123 4567.' };
+  const d = s.replace(/\D/g, '');
+  // the 10-digit local part: after +63 / 63, or after the leading 0
+  const local = s.startsWith('+') || (d.startsWith('63') && d.length > 10) ? d.replace(/^63/, '') : d.replace(/^0/, '');
+  if (s.startsWith('+') && !d.startsWith('63')) return { ok: false, msg: 'Only Philippine numbers are accepted — start with +63 or 09.' };
+  if (local.length !== 10) {
+    return { ok: false, msg: `Invalid number — it needs +63 followed by exactly 10 digits (you entered ${local.length}). Example: +63 917 123 4567.` };
+  }
+  if (local[0] !== '9') return { ok: false, msg: 'Invalid number — a PH mobile number starts with 9 after +63 (e.g. +63 917 123 4567).' };
+  return { ok: true, value: `+63 ${local.slice(0, 3)} ${local.slice(3, 6)} ${local.slice(6)}` };
+}
+
+const RULES = {
+  name(v, { full = true } = {}) {
+    v = v.trim().replace(/\s+/g, ' ');
+    if (!v) return 'Full name is required.';
+    if (v.length < 2 || v.length > 100) return 'Full name must be 2 to 100 characters.';
+    if (NAME_BAD_CHARS.test(v)) return 'Use letters only (spaces, periods, apostrophes and hyphens are allowed).';
+    if (full && !v.includes(' ')) return 'Please enter both first and last name.';
+    return '';
+  },
+  email(v) {
+    v = v.trim().toLowerCase();
+    if (!v) return 'Email address is required.';
+    if (v.length > 254 || !EMAIL_REGEX.test(v) || v.includes('..')) return 'Enter a valid email address, e.g. name@gmail.com.';
+    const dom = v.split('@')[1];
+    if (DOMAIN_TYPOS[dom]) return `Did you mean ${v.split('@')[0]}@${DOMAIN_TYPOS[dom]}?`;
+    return '';
+  },
+  password(v, { required = true } = {}) {
+    if (!v) return required ? 'Password is required.' : '';
+    if (v.length < 8) return `Password must be at least 8 characters (now ${v.length}).`;
+    if (v.length > 72) return 'Password must be at most 72 characters.';
+    if (!/[A-Za-z]/.test(v) || !/[0-9]/.test(v)) return 'Password must include both letters and numbers.';
+    return '';
+  },
+  phone(v, { required = true } = {}) {
+    if (!v.trim()) return required ? 'Phone number is required.' : '';
+    const r = normalizePhPhone(v);
+    return r.ok ? '' : r.msg;
+  },
+  select(label) { return v => v ? '' : `Please choose ${label}.`; },
+  text(label, { required = true } = {}) {
+    return v => {
+      v = v.trim();
+      if (!v) return required ? `${label} is required.` : '';
+      if (v.length < 2 || v.length > 100) return `${label} must be 2 to 100 characters.`;
+      return '';
+    };
+  },
+  memberId(v) {
+    v = v.trim();
+    if (!v) return '';
+    return ID_REGEX.test(v) ? '' : 'Member ID must look like HRC-2026-0001 (or leave it blank).';
+  }
+};
+
+function fieldErrorEl(input) {
+  const box = input.closest('.fg2') || input.closest('.fg') || input.parentElement;
+  let el = box.querySelector(':scope > .fld-err');
+  if (!el) { el = document.createElement('div'); el.className = 'fld-err'; box.appendChild(el); }
+  return el;
+}
+function setFieldError(id, msg) {
+  const input = document.getElementById(id); if (!input) return;
+  input.classList.toggle('is-invalid', !!msg);
+  const el = fieldErrorEl(input);
+  el.textContent = msg || '';
+  el.style.display = msg ? 'block' : 'none';
+}
+function clearFormErrors(ids) { ids.forEach(id => setFieldError(id, '')); }
+
+// Rules for the Add / Edit Member page (depends on add vs edit and role)
+function memberFormRules() {
+  const editing = !!memberFormUserId;
+  const midInput = document.getElementById('mf-mid');
+  const rules = {
+    'mf-name': v => RULES.name(v),
+    'mf-email': v => RULES.email(v),
+    'mf-phone': v => RULES.phone(v),
+    'mf-pass': v => RULES.password(v, { required: !editing }),
+    'mf-province': RULES.select('a province'),
+    'mf-company': RULES.text('Company'),
+    'mf-department': RULES.text('Department'),
+    'mf-position': RULES.text('Position'),
+    'mf-expertise': RULES.select('an area of expertise')
+  };
+  if (isSuperAdmin() && midInput && !midInput.disabled) rules['mf-mid'] = v => RULES.memberId(v);
+  return rules;
+}
+function profileFormRules() {
+  return {
+    'ep-name': v => RULES.name(v, { full: false }),
+    'ep-email': v => RULES.email(v),
+    'ep-phone': v => RULES.phone(v, { required: false }),
+    'ep-company': RULES.text('Company', { required: false }),
+    'ep-department': RULES.text('Department', { required: false }),
+    'ep-position': RULES.text('Position', { required: false })
+  };
+}
+// Checks every field; shows all errors; focuses the first wrong one
+function runValidation(rules) {
+  let first = null;
+  Object.entries(rules).forEach(([id, rule]) => {
+    const el = document.getElementById(id); if (!el) return;
+    const msg = rule(el.value || '');
+    setFieldError(id, msg);
+    if (msg && !first) first = el;
+  });
+  if (first) { first.focus(); first.scrollIntoView({ block: 'center', behavior: 'smooth' }); }
+  return !first;
+}
+// Live checks: clear the message while typing, re-check when leaving a field
+function attachLiveValidation(rulesFn) {
+  Object.keys(rulesFn()).forEach(id => {
+    const el = document.getElementById(id);
+    if (!el || el.dataset.liveVal) return;
+    el.dataset.liveVal = '1';
+    el.addEventListener('input', () => { if (el.classList.contains('is-invalid')) setFieldError(id, ''); });
+    el.addEventListener('change', () => { const r = rulesFn()[id]; if (r) setFieldError(id, r(el.value || '')); });
+    el.addEventListener('blur', () => {
+      if (/phone$/.test(id)) { const p = normalizePhPhone(el.value); if (p.ok) el.value = p.value; }
+      const r = rulesFn()[id]; if (r && el.value) setFieldError(id, r(el.value || ''));
+    });
+  });
+}
+// Server messages (08_validation.sql) → the matching field
+function showServerFieldError(e, prefix) {
+  const m = (e && e.message) || '';
+  const map = [[/phone/i, 'phone'], [/full name/i, 'name'], [/email/i, 'email'], [/password/i, 'pass'], [/province/i, 'province'],
+               [/company/i, 'company'], [/department/i, 'department'], [/position/i, 'position'], [/expertise/i, 'expertise'], [/member id/i, 'mid']];
+  const hit = map.find(([re]) => re.test(m));
+  if (hit && document.getElementById(`${prefix}-${hit[1]}`)) { setFieldError(`${prefix}-${hit[1]}`, m); return true; }
+  return false;
+}
+
+// ════════════════════════════════════════════════
 // MEMBER MANAGEMENT  (functions in 06_member_management.sql)
 //   Super admin  → View · Edit · Archive · Restore · add members/admins
-//   Normal admin → View · Remove (archive) · add members
+//   Normal admin → View · Archive · add members (no editing, no admins)
 // ════════════════════════════════════════════════
 function renderAdminIdentity() {
   setText('a-sb-role', isSuperAdmin() ? '🛡 Super Admin Panel' : '🛡 Admin Panel');
@@ -1925,7 +2077,7 @@ function memberActions(m) {
     return acts;
   }
   if (sup) acts.push({ key: 'edit', label: '✏ Edit', call: `openMemberForm('${id}')` });
-  if (sup || m.role === 'member') acts.push({ key: 'archive', label: sup ? '🗄 Archive' : '🗑 Remove', cls: 'danger', call: `openArchiveMember('${id}')` });
+  if (sup || m.role === 'member') acts.push({ key: 'archive', label: '🗄 Archive', cls: 'danger', call: `openArchiveMember('${id}')` });
   return acts;
 }
 function openActMenu(ev, userId) {
@@ -1978,15 +2130,21 @@ function openMemberForm(userId) {
   setText('mf-save', m ? 'Save Changes' : 'Save Member');
   document.getElementById('mf-err').style.display = 'none';
   document.getElementById('mf-done').style.display = 'none';
+  clearFormErrors(['mf-name', 'mf-email', 'mf-phone', 'mf-pass', 'mf-province', 'mf-company', 'mf-department', 'mf-position', 'mf-expertise', 'mf-mid']);
+  attachLiveValidation(memberFormRules);
   if (!m) generateMemberPassword();
   onMemberRoleChange();
   aShowPage('member-form');
   setText('a-page-title', m ? 'Edit Member' : 'Add Member');
 }
 function generateMemberPassword() {
-  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789';
+  const letters = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz', digits = '23456789', all = letters + digits;
   const rnd = crypto.getRandomValues(new Uint32Array(10));
-  document.getElementById('mf-pass').value = 'GC-' + Array.from(rnd, n => chars[n % chars.length]).join('');
+  const pick = (set, n) => set[n % set.length];
+  const chars = Array.from(rnd, (n, i) => i === 0 ? pick(letters, n) : i === 1 ? pick(digits, n) : pick(all, n));
+  for (let i = chars.length - 1; i > 0; i--) { const j = rnd[i] % (i + 1); [chars[i], chars[j]] = [chars[j], chars[i]]; }
+  document.getElementById('mf-pass').value = 'GC-' + chars.join('');
+  setFieldError('mf-pass', '');
 }
 function onMemberRoleChange() {
   const role = document.getElementById('mf-role').value;
@@ -2021,10 +2179,8 @@ async function saveMemberForm(addAnother) {
   const fail = t => { err.textContent = t; err.style.display = 'block'; err.scrollIntoView({ block: 'center', behavior: 'smooth' }); };
   err.style.display = 'none';
   const editing = !!memberFormUserId, sup = isSuperAdmin();
-  if (!g('mf-name')) return fail('Please enter the full name.');
-  if (!EMAIL_REGEX.test(g('mf-email').toLowerCase())) return fail('Please enter a valid email address.');
-  if (!editing && g('mf-pass').length < 6) return fail('The password must be at least 6 characters.');
-  if (editing && g('mf-pass') && g('mf-pass').length < 6) return fail('The new password must be at least 6 characters.');
+  if (!runValidation(memberFormRules())) return fail('Please fix the fields marked in red.');
+  document.getElementById('mf-phone').value = normalizePhPhone(g('mf-phone')).value;
 
   const data = { full_name: g('mf-name'), phone: g('mf-phone'), province: g('mf-province'), company: g('mf-company'),
                  department: g('mf-department'), position: g('mf-position'), expertise: g('mf-expertise') };
@@ -2060,7 +2216,7 @@ async function saveMemberForm(addAnother) {
     done.style.display = 'block';
     showToast(`${data.full_name} was added.`, 'success');
     if (addAnother) {
-      ['mf-name', 'mf-email', 'mf-phone', 'mf-position', 'mf-mid'].forEach(id => { document.getElementById(id).value = ''; });
+      ['mf-name', 'mf-email', 'mf-phone', 'mf-position', 'mf-mid'].forEach(id => { document.getElementById(id).value = ''; setFieldError(id, ''); });
       generateMemberPassword();
       updateMemberPreview();
       document.getElementById('mf-name').focus();
@@ -2069,6 +2225,7 @@ async function saveMemberForm(addAnother) {
     }
     done.scrollIntoView({ block: 'center', behavior: 'smooth' });
   } catch (e) {
+    showServerFieldError(e, 'mf');
     fail(friendlyAuthError(e));
   } finally {
     btns.forEach(b => b.disabled = false);
@@ -2083,12 +2240,12 @@ function openArchiveMember(userId) {
   const m = membersSource().find(x => x.user_id === userId); if (!m) return;
   archiveTargetId = userId;
   const sup = isSuperAdmin();
-  setText('aa-title', sup ? `🗄 Archive ${m.full_name}` : `🗑 Remove ${m.full_name}`);
+  setText('aa-title', `🗄 Archive ${m.full_name}`);
   setText('aa-text', `${m.full_name} (${m.member_id || m.email}) will be hidden from the member list and will no longer be able to sign in. `
     + 'Their attendance and certificates are kept.' + (sup ? ' You can restore the account later from the "Archived" filter.' : ' A super admin can restore the account if needed.'));
   document.getElementById('aa-reason').value = '';
   document.getElementById('aa-err').style.display = 'none';
-  setText('aa-btn', sup ? 'Archive' : 'Remove');
+  setText('aa-btn', 'Archive');
   openMo('a-archive-modal');
 }
 async function confirmArchiveMember() {
@@ -2096,7 +2253,7 @@ async function confirmArchiveMember() {
   try {
     await rpc('admin_archive_member', { p_user: archiveTargetId, p_reason: document.getElementById('aa-reason').value.trim() || null });
     closeMo('a-archive-modal');
-    showToast(isSuperAdmin() ? 'Account archived.' : 'Member removed.', 'info');
+    showToast('Account archived.', 'info');
     await loadAdminData();
   } catch (e) {
     const err = document.getElementById('aa-err'); err.textContent = friendlyAuthError(e); err.style.display = 'block';
@@ -2131,7 +2288,7 @@ function renderAdminProfile() {
    ['department', me.department], ['position', me.position]].forEach(([k, v]) => setText('a-prof-' + k, v || '—'));
   setHtml('a-prof-perms', me.is_super
     ? '✅ Add members and admins<br>✅ Edit any member (details, level, status, password, account type)<br>✅ Archive and restore accounts<br>✅ Manage sessions, attendance, certificates and payments'
-    : '✅ Add members<br>✅ Remove (archive) members<br>✅ Manage sessions, attendance, certificates and payments<br>🔒 Editing members and creating admins is for super admins');
+    : '✅ View and add members<br>✅ Archive members<br>✅ Manage sessions, attendance, certificates and payments<br>🔒 Editing member info, restoring archived accounts and creating admins is for super admins');
 }
 async function sendMyPasswordReset() {
   const email = adminMe?.email || loggedInUser?.email;

@@ -376,12 +376,12 @@
 <div class="mo" id="m-edit-profile">
   <div class="modal"><div class="mh"><div class="mt">✏ Edit Profile</div><button class="mc" onclick="closeMo('m-edit-profile')">✕</button></div>
   <div class="mb"><div class="g2">
-    <div class="fg2" style="grid-column:1/-1;"><div class="fl2">Full Name</div><input class="fi2" id="ep-name"></div>
+    <div class="fg2" style="grid-column:1/-1;"><div class="fl2">Full Name</div><input class="fi2" id="ep-name" maxlength="100"></div>
     <div class="fg2"><div class="fl2">Province</div><select class="fs2" id="ep-province"><option>Cavite</option><option>Laguna</option><option>Batangas</option><option>Rizal</option><option>Quezon</option></select></div>
     <div class="fg2"><div class="fl2">Company</div><input class="fi2" id="ep-company"></div>
     <div class="fg2"><div class="fl2">Department</div><input class="fi2" id="ep-department"></div>
     <div class="fg2"><div class="fl2">Position</div><input class="fi2" id="ep-position"></div>
-    <div class="fg2"><div class="fl2">Phone</div><input class="fi2" id="ep-phone"></div>
+    <div class="fg2"><div class="fl2">Phone</div><input class="fi2" id="ep-phone" type="tel" inputmode="tel" maxlength="18" placeholder="+63 9XX XXX XXXX"></div>
     <div class="fg2" style="grid-column:1/-1;"><div class="fl2">Sign-in Email</div><input class="fi2" id="ep-email" type="email"><div style="font-size:11px;color:var(--t3);margin-top:4px;">"Forgot password?" sends the reset link to this address, so it must be an inbox you can open.</div></div>
   </div>
   <div id="ep-err" style="display:none;background:var(--red-l);border-radius:var(--r2);padding:10px 13px;margin-top:8px;font-size:12px;color:var(--red-d);"></div></div>
@@ -606,13 +606,13 @@
           <div class="card cp">
             <div class="mf-sec-title">👤 Account</div>
             <div class="g2">
-              <div class="fg2" style="grid-column:1/-1;"><div class="fl2">Full Name *</div><input class="fi2" id="mf-name" placeholder="First and last name" oninput="updateMemberPreview()"></div>
-              <div class="fg2"><div class="fl2">Email Address *</div><input class="fi2" id="mf-email" type="email" placeholder="name@email.com" oninput="updateMemberPreview()"><div class="mf-hint" id="mf-email-hint">They sign in with this email.</div></div>
-              <div class="fg2"><div class="fl2">Phone</div><input class="fi2" id="mf-phone" placeholder="09XX XXX XXXX"></div>
+              <div class="fg2" style="grid-column:1/-1;"><div class="fl2">Full Name *</div><input class="fi2" id="mf-name" placeholder="First and last name" maxlength="100" autocomplete="off" oninput="updateMemberPreview()"></div>
+              <div class="fg2"><div class="fl2">Email Address *</div><input class="fi2" id="mf-email" type="email" placeholder="name@email.com" maxlength="254" autocomplete="off" oninput="updateMemberPreview()"><div class="mf-hint" id="mf-email-hint">They sign in with this email.</div></div>
+              <div class="fg2"><div class="fl2">Phone *</div><input class="fi2" id="mf-phone" type="tel" inputmode="tel" maxlength="18" placeholder="+63 9XX XXX XXXX"><div class="mf-hint">PH mobile: +63 and 10 digits.</div></div>
               <div class="fg2" id="mf-pass-wrap" style="grid-column:1/-1;">
                 <div class="fl2" id="mf-pass-label">Password *</div>
                 <div style="display:flex;gap:7px;">
-                  <input class="fi2" id="mf-pass" type="text" placeholder="At least 6 characters" autocomplete="new-password">
+                  <input class="fi2" id="mf-pass" type="text" placeholder="8+ characters, letters and numbers" maxlength="72" autocomplete="new-password">
                   <button class="btn btn-ghost btn-sm" type="button" onclick="generateMemberPassword()">🎲 Generate</button>
                 </div>
                 <div class="mf-hint" id="mf-pass-hint">Share this password with the member. They can change it anytime with "Forgot password?".</div>
@@ -633,7 +633,7 @@
                 <div class="mf-hint" id="mf-role-hint">Members use the member portal.</div>
               </div>
               <div class="fg2"><div class="fl2">Member ID</div>
-                <input class="fi2" id="mf-mid" placeholder="Leave blank to auto-generate" oninput="updateMemberPreview()">
+                <input class="fi2" id="mf-mid" maxlength="13" placeholder="Leave blank to auto-generate" oninput="updateMemberPreview()">
                 <div class="mf-hint" id="mf-mid-hint">Blank = next HRC-YYYY-NNNN number.</div>
               </div>
             </div>
@@ -642,11 +642,11 @@
           <div class="card cp">
             <div class="mf-sec-title">🏢 Member Details</div>
             <div class="g2">
-              <div class="fg2"><div class="fl2">Province</div><select class="fs2" id="mf-province"><option value="">-- Select province --</option><option>Cavite</option><option>Laguna</option><option>Batangas</option><option>Rizal</option><option>Quezon</option></select></div>
-              <div class="fg2"><div class="fl2">Company</div><input class="fi2" id="mf-company" placeholder="e.g. MSME HR Solutions, Inc."></div>
-              <div class="fg2"><div class="fl2">Department</div><input class="fi2" id="mf-department" placeholder="e.g. Human Resources"></div>
-              <div class="fg2"><div class="fl2">Position</div><input class="fi2" id="mf-position" placeholder="e.g. HR Officer" oninput="updateMemberPreview()"></div>
-              <div class="fg2"><div class="fl2">Area of Expertise</div><select class="fs2" id="mf-expertise" onchange="updateMemberPreview()"><option value="">— Not set —</option></select></div>
+              <div class="fg2"><div class="fl2">Province *</div><select class="fs2" id="mf-province"><option value="">-- Select province --</option><option>Cavite</option><option>Laguna</option><option>Batangas</option><option>Rizal</option><option>Quezon</option></select></div>
+              <div class="fg2"><div class="fl2">Company *</div><input class="fi2" id="mf-company" maxlength="100" placeholder="e.g. MSME HR Solutions, Inc."></div>
+              <div class="fg2"><div class="fl2">Department *</div><input class="fi2" id="mf-department" maxlength="100" placeholder="e.g. Human Resources"></div>
+              <div class="fg2"><div class="fl2">Position *</div><input class="fi2" id="mf-position" maxlength="100" placeholder="e.g. HR Officer" oninput="updateMemberPreview()"></div>
+              <div class="fg2"><div class="fl2">Area of Expertise *</div><select class="fs2" id="mf-expertise" onchange="updateMemberPreview()"><option value="">— Not set —</option></select></div>
               <div class="fg2 mf-super-only"><div class="fl2">Mastery Level</div><select class="fs2" id="mf-level" onchange="updateMemberPreview()"><option>Entry</option><option>Mid</option><option>Master</option></select></div>
               <div class="fg2 mf-super-only"><div class="fl2">Account Status</div><select class="fs2" id="mf-status" onchange="updateMemberPreview()"><option>Active</option><option>Inactive</option><option>Suspended</option></select></div>
             </div>
