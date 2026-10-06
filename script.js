@@ -745,12 +745,14 @@ function mShowPage(p) {
 // ADMIN NAVIGATION
 // ════════════════════════════════════════════════
 function aShowPage(p) {
+  // Dashboard and Analytics are one page now: "analytics" opens it at the charts
+  if (p === 'analytics') { aShowPage('home'); setTimeout(() => document.getElementById('a-analytics-section')?.scrollIntoView({ behavior: 'smooth' }), 30); return; }
   document.querySelectorAll('#admin-app .page').forEach(x=>x.classList.remove('active'));
   document.querySelectorAll('#admin-app .nav-item').forEach(x=>x.classList.remove('active'));
   document.getElementById('ap-'+p).classList.add('active');
   const n=document.getElementById('an-'+(p==='member-form'?'members':p)); if(n) n.classList.add('active');
   closeActMenu();
-  const t={home:'Admin Dashboard',analytics:'AI Analytics',members:'Data Management',sessions:'Session Creation',attendance:'Attendance Management',payments:'Payment Management',profile:'My Profile','member-form':memberFormUserId?'Edit Member':'Add Member'};
+  const t={home:'Analytics',members:'Data Management',sessions:'Session Creation',attendance:'Certificate Management',payments:'Payment Management',profile:'My Profile','member-form':memberFormUserId?'Edit Member':'Add Member'};
   document.getElementById('a-page-title').textContent = t[p]||p;
   window.scrollTo(0,0);
 }
@@ -905,9 +907,6 @@ function renderMemberHome() {
   const hasAttendance = attended + missed > 0;
   const rate = hasAttendance ? Number(st.rate || 0) : null;
 
-  setText('m-ws-members', memberData ? fmtCompact(d.total_members) : '—');
-  setText('m-ws-attendance', fmtPct(rate));
-  setText('m-ws-certs', memberData ? fmtInt(st.certificates) : '—');
 
   // attendance ring
   const ring = document.getElementById('m-att-ring');
@@ -1378,8 +1377,6 @@ function handleMemberSearch(query) {
   const el = document.getElementById('m-hist-search'); if (el) el.value = query.trim();
   renderMemberAttendance();
 }
-function handleSettings() { showToast('Settings are not available yet.', 'info'); }
-function handleLinkedInLogin() { showToast('Sign in with LinkedIn is not available yet — please use your email and password.', 'info', 4500); }
 
 
 // ════════════════════════════════════════════════
@@ -1609,7 +1606,6 @@ function handleAdminSearch(query) {
   aMembersPage = 1;
   renderMembersTable();
 }
-function handleAdminSettings() { showToast('Admin settings are not available yet.', 'info'); }
 
 // ── Sessions ──
 function renderSessions() {
@@ -2459,7 +2455,7 @@ function adminBotReply(ml) {
   if (/sync|pending csv|awaiting/.test(ml)) {
     const list = (d.sessions || []).filter(s => isPastSession(s) && s.status !== 'Cancelled' && Number(s.registered) && !Number(s.log_count));
     if (!list.length) return 'All finished sessions have their attendance synced. ✅';
-    return `**${list.length} session(s)** awaiting attendance sync:\n` + list.slice(0, 5).map(s => `• ${s.title} (${fmtDateShort(s.start)})`).join('\n') + '\n\nGo to Attendance Management → Sync Now.';
+    return `**${list.length} session(s)** awaiting attendance sync:\n` + list.slice(0, 5).map(s => `• ${s.title} (${fmtDateShort(s.start)})`).join('\n') + '\n\nGo to Certificate Management → Sync Now.';
   }
   if (/payment|revenue/.test(ml)) {
     return `Payment summary:\n💚 Collected: **${fmtMoney(o.revenue_total)}** (${fmtMoney(o.revenue_month)} this month)\n⏳ Pending: **${fmtMoney(o.pending_amount)}** (${fmtInt(o.pending_payments)} payment(s))\n🎁 Waivers: ${fmtInt(o.waivers)}\nTotal transactions: ${fmtInt(o.transactions)}`;
