@@ -359,3 +359,36 @@ tr.is-archived td{opacity:.6;}
 .fi2.is-invalid,.fs2.is-invalid{border-color:var(--red);background:#FFF7F7;}
 .fi2.is-invalid:focus,.fs2.is-invalid:focus{box-shadow:0 0 0 3px rgba(229,57,53,.12);}
 .fld-err{display:none;font-size:11px;font-weight:600;color:var(--red-d);margin-top:4px;line-height:1.4;}
+
+/* ════════════════════════════════════════════
+   SIDEBAR HOVER + QUICK VIEW
+   Every sidebar item slides slightly on hover and shows a
+   quick-view card (#nav-peek) with what's inside that page.
+════════════════════════════════════════════ */
+.sidebar .nav-item{position:relative;transition:background .18s,color .18s,transform .18s;}
+.sidebar .nav-item::before{content:'';position:absolute;left:0;top:50%;width:3px;height:0;border-radius:0 3px 3px 0;background:var(--red);transform:translateY(-50%);transition:height .2s ease;}
+.sidebar .nav-item:hover{transform:translateX(3px);}
+.sidebar .nav-item:hover::before{height:60%;}
+.sidebar .nav-item .ni{transition:transform .2s ease;}
+.sidebar .nav-item:hover .ni{transform:scale(1.12);}
+#member-app .sidebar .nav-item::before{background:var(--blue);}
+
+.nav-peek{position:fixed;z-index:500;width:250px;background:white;border:1px solid var(--border);border-radius:var(--r2);box-shadow:var(--sh-md);padding:12px 14px;pointer-events:none;
+  opacity:0;transform:translateX(-8px) scale(.98);transition:opacity .16s ease,transform .18s ease;visibility:hidden;}
+.nav-peek.show{opacity:1;transform:translateX(0) scale(1);visibility:visible;}
+.nav-peek::before{content:'';position:absolute;left:-6px;top:var(--arrow-top,22px);width:10px;height:10px;background:white;border-left:1px solid var(--border);border-bottom:1px solid var(--border);transform:translateY(-50%) rotate(45deg);}
+.pk-head{display:flex;align-items:center;gap:7px;font-family:var(--font-h);font-size:13px;font-weight:700;color:var(--t1);margin-bottom:8px;padding-bottom:8px;border-bottom:1px solid var(--border);}
+.pk-ic{font-size:15px;}
+.pk-go{margin-left:auto;font-size:10px;font-weight:600;color:var(--t3);}
+.pk-row{display:flex;justify-content:space-between;gap:10px;font-size:12px;color:var(--t2);padding:3px 0;}
+.pk-row strong{color:var(--t1);font-weight:700;text-align:right;}
+.pk-row strong.ok{color:var(--green);}
+.pk-row strong.warn{color:#B45309;}
+.pk-note{font-size:11px;color:var(--t3);margin-top:7px;line-height:1.5;}
+@media (prefers-reduced-motion: reduce){.sidebar .nav-item,.nav-peek{transition:none;}.sidebar .nav-item:hover{transform:none;}}
+/* current page in the sidebar keeps the accent bar */
+#admin-app .sidebar .nav-item.active{background:var(--red-l);color:var(--red);font-weight:600;}
+#member-app .sidebar .nav-item.active{background:var(--blue-l);color:var(--blue);font-weight:600;}
+.sidebar .nav-item.active::before{height:60%;}
+.pk-head > span:nth-child(2){flex:1;min-width:0;}
+.pk-go{white-space:nowrap;}

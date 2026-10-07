@@ -452,6 +452,7 @@ function switchToLogin() {
   stopCountdown();
   loggedInUser = null;
   memberData = null;
+  memberPayments = null;
   adminData = null;
   adminMe = null;
   adminMembers = null;
@@ -732,11 +733,13 @@ sb.auth.onAuthStateChange((event) => {
 // MEMBER NAVIGATION
 // ════════════════════════════════════════════════
 function mShowPage(p) {
+  // Career Path now lives inside Session and Attendance (its own tab)
+  if (p === 'career') { mShowPage('attendance'); const t = document.getElementById('m-tab-career'); if (t) { aSwitchTab(t, 'ma-career'); renderSkillTree(); } return; }
   document.querySelectorAll('#member-app .page').forEach(x=>x.classList.remove('active'));
   document.querySelectorAll('#member-app .nav-item').forEach(x=>x.classList.remove('active'));
   document.getElementById('mp-'+p).classList.add('active');
   const n=document.getElementById('mn-'+p); if(n) n.classList.add('active');
-  const t={home:'Dashboard',career:'Career Path',attendance:'Attendance & Sessions',certificates:'Certificates',profile:'My Profile'};
+  const t={home:'Dashboard',attendance:'Session and Attendance',payments:'Payment',certificates:'Certificate',profile:'My Profile'};
   document.getElementById('m-page-title').textContent = t[p]||p;
   window.scrollTo(0,0);
 }
@@ -752,7 +755,7 @@ function aShowPage(p) {
   document.getElementById('ap-'+p).classList.add('active');
   const n=document.getElementById('an-'+(p==='member-form'?'members':p)); if(n) n.classList.add('active');
   closeActMenu();
-  const t={home:'Analytics',members:'Data Management',sessions:'Session Creation',attendance:'Certificate Management',payments:'Payment Management',profile:'My Profile','member-form':memberFormUserId?'Edit Member':'Add Member'};
+  const t={home:'Analytic Dashboard',members:'Data Management',sessions:'Session and Attendance',attendance:'Certificate',payments:'Payment',profile:'My Profile','member-form':memberFormUserId?'Edit Member':'Add Member'};
   document.getElementById('a-page-title').textContent = t[p]||p;
   window.scrollTo(0,0);
 }
@@ -887,6 +890,7 @@ function renderMemberAll() {
   startCountdown();
   setupMemberBot();
   updateMemberBadges();
+  loadMemberPayments();
 }
 function md() {
   return memberData || { me: {}, stats: {}, upcoming: [], history: [], certificates: [], skill_tree: [], rankings: [], areas: [] };
@@ -1616,6 +1620,8 @@ function renderSessions() {
   setText('a-tab-upcoming', `Upcoming (${upcoming.length})`);
   setText('a-tab-past', `Past Sessions (${past.length})`);
   setText('a-tab-draft', `Drafts (${drafts.length})`);
+  const waiting = Number(ad().overview?.awaiting_sync || 0);
+  setText('a-tab-sync', `🔄 Attendance Sync${waiting ? ` (${waiting})` : ''}`);
 
   setHtml('a-sess-upcoming', upcoming.length ? upcoming.map(s => {
     const live = sessionIsLive(s), soon = new Date(s.start) - Date.now() < 864e5;
@@ -1640,8 +1646,9 @@ function renderSessions() {
     : `<div style="grid-column:1/-1;">${emptyState('📝', 'No drafts.')}</div>`);
 }
 function goToAttendance(sessionId) {
+  const s = (ad().sessions || []).find(x => x.session_id === sessionId);
+  if (s && !Number(s.log_count)) { aOpenSync(sessionId); return; }     // not synced yet → sync tab
   aShowPage('attendance');
-  const sel = document.getElementById('a-sync-session'); if (sel) sel.value = sessionId;
   const f = document.getElementById('a-cert-filter'); if (f && [...f.options].some(o => o.value === sessionId)) { f.value = sessionId; renderAdminCertificates(); }
 }
 function copyZoomLink(sessionId) {
@@ -1842,7 +1849,7 @@ function openCertTemplate(sessionId) {
 function handlePendingCert(sessionId) {
   const s = (ad().sessions || []).find(x => x.session_id === sessionId);
   showToast(`${s ? s.title + ' — ' : ''}sync attendance from Zoom first to generate certificates.`, 'info', 4500);
-  goToAttendance(sessionId);
+  aOpenSync(sessionId);
 }
 async function handleOverrideCert(registrationId) {
   const r = (ad().registrations || []).find(x => x.registration_id === registrationId); if (!r) return;
@@ -2295,6 +2302,123 @@ async function sendMyPasswordReset() {
 }
 
 // ════════════════════════════════════════════════
+// MEMBER: PAYMENT page  (member_payments() in 09_member_payments.sql)
+// ════════════════════════════════════════════════
+let memberPayments = null;   // { transactions: [...], registrations: [...] }
+async function loadMemberPayments() {
+  try {
+    memberPayments = await rpc('member_payments');
+  } catch (e) {
+    console.warn('[Supabase] member_payments not available — run 09_member_payments.sql. Showing registrations only.', e);
+    // fallback: what member_dashboard already knows
+    const d = md();
+    memberPayments = {
+      fallback: true, transactions: [],
+      registrations: [
+        ...(d.upcoming || []).filter(s => s.is_registered).map(s => ({ session_id: s.session_id, session: s.title, start: s.start, fee: s.fee, payment_status: s.payment_status, session_status: s.status })),
+        ...(d.history || []).map(h => ({ session_id: h.session_id, session: h.title, start: h.start, fee: null, payment_status: h.payment_status, session_status: h.session_status }))
+      ]
+    };
+  }
+  renderMemberPayments();
+  updateMemberBadges();
+}
+function mp() { return memberPayments || { transactions: [], registrations: [] }; }
+function memberDues() {
+  return (mp().registrations || []).filter(r => ['UNPAID', 'PENDING_PAYMENT'].includes(r.payment_status)
+    && r.session_status !== 'Cancelled' && Number(r.fee || 0) > 0);
+}
+const REG_PAY_LABEL = { UNPAID: ['bg-y', '⏳ Unpaid'], PENDING_PAYMENT: ['bg-y', '⏳ Payment pending'], PAID: ['bg-g', '✓ Paid'], FREE: ['bg-b', 'Free'], WAIVED: ['bg-p', '🎁 Waived'] };
+function renderMemberPayments() {
+  const tx = mp().transactions || [], regs = mp().registrations || [], loaded = !!memberPayments;
+  const paid = tx.filter(t => t.status === 'PAID').reduce((a, t) => a + Number(t.amount || 0), 0);
+  const dues = memberDues();
+  const due = dues.reduce((a, r) => a + Number(r.fee || 0), 0);
+  setText('mpay-paid', loaded ? fmtMoney(paid) : '—');
+  setText('mpay-due', loaded ? fmtMoney(due) : '—');
+  setText('mpay-due-lbl', loaded ? `Awaiting Payment (${dues.length})` : 'Awaiting Payment');
+  setText('mpay-free', loaded ? fmtInt(regs.filter(r => r.payment_status === 'FREE' || r.payment_status === 'WAIVED').length) : '—');
+  setText('mpay-count', loaded ? fmtInt(tx.length) : '—');
+
+  setHtml('mpay-dues', dues.length ? dues.map(r => {
+    const [c, l] = REG_PAY_LABEL[r.payment_status] || ['bg-gr', r.payment_status];
+    return `<div class="m-hitem"><div class="m-hst" style="background:var(--yellow-l);color:#B45309;">₱</div><div class="m-hi"><h4>${esc(r.session)}</h4><p>${fmtDate(r.start)} · ${fmtTime(r.start)} · ${fmtMoney(r.fee)}</p></div><div class="m-ha"><span class="badge ${c}">${l}</span></div></div>`;
+  }).join('') + `<div style="font-size:12px;color:var(--t3);margin-top:10px;line-height:1.6;">Online payment isn't available on the website yet — HR Calabarzon will send you payment instructions. Your Zoom link unlocks automatically once your payment is confirmed.</div>`
+    : emptyState('✅', loaded ? 'Nothing to pay right now.' : 'Loading…'));
+
+  const st = document.getElementById('mpay-status')?.value || '';
+  const q = (document.getElementById('mpay-search')?.value || '').trim().toLowerCase();
+  const list = tx.filter(t => (!st || t.status === st) && (!q || String(t.session || '').toLowerCase().includes(q)));
+  setHtml('mpay-tbody', list.length ? list.map(t => `<tr><td class="nc">${esc(t.session || '—')}</td><td style="font-weight:700;">${fmtMoney(t.amount)}</td><td>${t.status === 'PAID' || t.status === 'REFUNDED' ? esc(CHANNEL_LABEL[t.channel] || t.channel || '—') : '—'}</td><td>${fmtDate(t.date)}</td><td style="font-size:12px;color:var(--t3);">${esc(t.reference || '—')}</td><td>${paymentBadge(t.status)}</td></tr>`).join('')
+    : emptyRow(6, memberPayments?.fallback ? 'Payment history needs the 09_member_payments.sql update in Supabase.' : tx.length ? 'No payments match your filters.' : 'No payments yet.'));
+}
+
+// ════════════════════════════════════════════════
+// ADMIN: Zoom attendance sync lives in Session and Attendance → "Attendance Sync" tab
+// ════════════════════════════════════════════════
+function aOpenSync(sessionId) {
+  aShowPage('sessions');
+  const tab = document.getElementById('a-tab-sync'); if (tab) aSwitchTab(tab, 'as-sync');
+  const sel = document.getElementById('a-sync-session');
+  if (sel && sessionId && [...sel.options].some(o => o.value === sessionId)) sel.value = sessionId;
+}
+
+// ════════════════════════════════════════════════
+// SIDEBAR QUICK VIEW — hover any sidebar item to preview what's inside
+// ════════════════════════════════════════════════
+function peekRows(rows) {
+  return rows.filter(Boolean).map(([k, v, cls]) => `<div class="pk-row"><span>${esc(k)}</span><strong class="${cls || ''}">${esc(v)}</strong></div>`).join('');
+}
+const NAV_PEEK = {
+  // ── member
+  'mn-profile': () => { const me = md().me || {}; return { icon: '👤', title: 'My Profile', body: peekRows([['Name', me.full_name || loggedInUser?.name || '—'], ['Member ID', loggedInUser?.id || '—'], ['Level', me.mastery_level || '—'], ['Province', me.province || '—']]) }; },
+  'mn-home': () => { const st = md().stats || {}, n = memberNextSession(); const has = Number(st.attended || 0) + Number(st.missed || 0) > 0;
+    return { icon: '🏠', title: 'Dashboard', body: peekRows([['Attendance', has ? st.rate + '%' : '—', has && st.rate >= 80 ? 'ok' : ''], ['Certificates', fmtInt(st.certificates)], ['Province rank', st.province_rank?.rank ? '#' + st.province_rank.rank : '—']]) + (n ? `<div class="pk-note">Next: ${esc(n.title)} · ${fmtDateShort(n.start)}</div>` : '') }; },
+  'mn-attendance': () => { const d = md(), st = d.stats || {}, n = memberNextSession(), nodes = d.skill_tree || [];
+    return { icon: '📅', title: 'Session and Attendance', body: peekRows([['Upcoming sessions', fmtInt((d.upcoming || []).length)], ['Registered', fmtInt((d.upcoming || []).filter(s => s.is_registered).length)], ['Attended / missed', `${fmtInt(st.attended)} / ${fmtInt(st.missed)}`], ['Career path', nodes.length ? `${nodes.filter(x => x.status === 'COMPLETED').length} of ${nodes.length} done` : 'Not set up']]) + (n ? `<div class="pk-note">Next: ${esc(n.title)} · ${fmtDateShort(n.start)} ${fmtTime(n.start)}</div>` : '<div class="pk-note">No upcoming sessions yet.</div>') }; },
+  'mn-payments': () => { const tx = mp().transactions || [], dues = memberDues();
+    return { icon: '💳', title: 'Payment', body: peekRows([['Awaiting payment', dues.length ? `${dues.length} · ${fmtMoney(dues.reduce((a, r) => a + Number(r.fee || 0), 0))}` : 'None', dues.length ? 'warn' : 'ok'], ['Total paid', fmtMoney(tx.filter(t => t.status === 'PAID').reduce((a, t) => a + Number(t.amount || 0), 0))], ['Transactions', fmtInt(tx.length)]]) }; },
+  'mn-certificates': () => { const c = md().certificates || [];
+    return { icon: '🏆', title: 'Certificate', body: peekRows([['Earned', fmtInt(c.length)], ['Being prepared', fmtInt(c.filter(x => x.status !== 'ISSUED').length)]]) + (c[0] ? `<div class="pk-note">Latest: ${esc(c[0].title)} · ${fmtDateShort(c[0].issued_at)}</div>` : '<div class="pk-note">Attend ≥80% of a session to earn one.</div>') }; },
+  // ── admin / super admin
+  'an-profile': () => { const me = adminMe || {}; return { icon: '👤', title: 'My Profile', body: peekRows([['Name', me.full_name || loggedInUser?.name || '—'], ['Admin ID', me.member_id || loggedInUser?.id || '—'], ['Role', me.is_super ? 'Super Admin' : 'Admin'], ['Email', me.email || '—']]) }; },
+  'an-members': () => { const all = membersSource(), cur = all.filter(m => !m.archived);
+    return { icon: '👥', title: 'Data Management', body: peekRows([['Members', fmtInt(cur.filter(m => m.role === 'member').length)], isSuperAdmin() ? ['Admins', fmtInt(cur.filter(m => m.role !== 'member').length)] : null, ['New this month', fmtInt(ad().overview?.new_members_month)], ['Unconfirmed email', fmtInt(cur.filter(m => !m.email_confirmed).length), cur.some(m => !m.email_confirmed) ? 'warn' : ''], ['Archived', fmtInt(all.filter(m => m.archived).length)]]) }; },
+  'an-home': () => { const o = ad().overview || {};
+    return { icon: '📊', title: 'Analytic Dashboard', body: peekRows([['Avg. attendance', fmtPct(o.attendance_rate)], ['Sessions this year', fmtInt(o.sessions_year)], ['Certificates issued', fmtInt(o.certs_total)], ['Payments collected', fmtMoney(o.revenue_total)]]) }; },
+  'an-sessions': () => { const all = ad().sessions || [], up = all.filter(isUpcomingSession).sort((a, b) => new Date(a.start) - new Date(b.start)), o = ad().overview || {};
+    return { icon: '📅', title: 'Session and Attendance', body: peekRows([['Upcoming', fmtInt(up.length)], ['Drafts', fmtInt(all.filter(s => s.status === 'Draft').length)], ['Awaiting attendance sync', fmtInt(o.awaiting_sync), Number(o.awaiting_sync) ? 'warn' : 'ok']]) + (up[0] ? `<div class="pk-note">Next: ${esc(up[0].title)} · ${fmtDateShort(up[0].start)} · ${fmtInt(up[0].registered)} registered</div>` : '') }; },
+  'an-payments': () => { const o = ad().overview || {};
+    return { icon: '💳', title: 'Payment', body: peekRows([['Collected', fmtMoney(o.revenue_total)], ['Pending', `${fmtInt(o.pending_payments)} · ${fmtMoney(o.pending_amount)}`, Number(o.pending_payments) ? 'warn' : ''], ['Waivers', fmtInt(o.waivers)], ['Transactions', fmtInt(o.transactions)]]) }; },
+  'an-attendance': () => { const cs = ad().cert_status || {}, ready = (ad().registrations || []).filter(r => r.attendance_status === 'ATTENDED' && !r.certificate_id).length;
+    return { icon: '🏆', title: 'Certificate', body: peekRows([['Issued', fmtInt(cs.issued)], ['Pending', fmtInt(cs.pending)], ['Ready to generate', fmtInt(ready), ready ? 'warn' : ''], ['Below 80% / failed', fmtInt(Number(cs.below || 0) + Number(cs.failed || 0))]]) }; }
+};
+let peekTimer = null;
+function showNavPeek(item) {
+  const fn = NAV_PEEK[item.id], box = document.getElementById('nav-peek');
+  if (!fn || !box) return;
+  const loading = item.id.startsWith('an-') ? !adminData : !memberData;
+  let p; try { p = fn(); } catch (e) { return; }
+  box.innerHTML = `<div class="pk-head"><span class="pk-ic">${p.icon}</span><span>${esc(p.title)}</span><span class="pk-go">Open →</span></div>${loading ? '<div class="pk-note">Loading…</div>' : p.body}`;
+  const r = item.getBoundingClientRect(), sb = item.closest('.sidebar').getBoundingClientRect();
+  box.style.left = (sb.right + 10) + 'px';
+  box.classList.add('show');
+  const h = box.offsetHeight;
+  box.style.top = Math.max(10, Math.min(r.top + r.height / 2 - 26, window.innerHeight - h - 10)) + 'px';
+  box.style.setProperty('--arrow-top', (r.top + r.height / 2 - parseFloat(box.style.top)) + 'px');
+}
+function hideNavPeek() { document.getElementById('nav-peek')?.classList.remove('show'); }
+document.addEventListener('DOMContentLoaded', () => {
+  if (window.matchMedia && !window.matchMedia('(hover: hover)').matches) return;   // phones/tablets: no hover
+  document.querySelectorAll('.sidebar .nav-item[id]').forEach(item => {
+    item.addEventListener('mouseenter', () => { clearTimeout(peekTimer); peekTimer = setTimeout(() => showNavPeek(item), 120); });
+    item.addEventListener('mouseleave', () => { clearTimeout(peekTimer); peekTimer = setTimeout(hideNavPeek, 80); });
+    item.addEventListener('click', () => { clearTimeout(peekTimer); hideNavPeek(); });
+  });
+});
+window.addEventListener('scroll', hideNavPeek, true);
+
+// ════════════════════════════════════════════════
 // EXPORT — builds a CSV file from the data on screen
 // ════════════════════════════════════════════════
 function downloadCSV(filename, headers, rows) {
@@ -2308,7 +2432,11 @@ function downloadCSV(filename, headers, rows) {
 function handleExport(what) {
   const today = new Date().toISOString().slice(0, 10);
   let file, headers, rows;
-  if (what === 'attendance history' || what === 'all attendance records') {
+  if (what === 'my payments') {
+    file = `my-payments-${today}.csv`;
+    headers = ['Session', 'Amount', 'Method', 'Date', 'Reference', 'Status'];
+    rows = (mp().transactions || []).map(t => [t.session, t.amount, CHANNEL_LABEL[t.channel] || t.channel, fmtDate(t.date), t.reference || '', t.status]);
+  } else if (what === 'attendance history' || what === 'all attendance records') {
     file = `my-attendance-${today}.csv`;
     headers = ['Session', 'Date', 'Area', 'Duration (min)', 'Attendance %', 'Status', 'Certificate'];
     rows = (md().history || []).map(h => [h.title, fmtDate(h.start), h.area, h.duration, h.attendance_pct ?? '', h.attendance_status, h.certificate_id ? 'Yes' : 'No']);
@@ -2363,7 +2491,11 @@ function showBadge(id, value) {
   el.style.display = value ? '' : 'none';
   if (value && el.classList.contains('nb')) el.textContent = value;
 }
-function updateMemberBadges() { showBadge('m-bell-dot', notificationItems('member').length > 0); }
+function updateMemberBadges() {
+  showBadge('m-bell-dot', notificationItems('member').length > 0);
+  const dues = memberPayments ? memberDues().length : 0;
+  showBadge('m-nb-pay', dues ? String(dues) : '');
+}
 function updateAdminBadges() {
   const o = ad().overview || {};
   const current = adminMembers ? adminMembers.filter(m => m.role === 'member' && !m.archived).length : Number(o.total_members);
@@ -2455,7 +2587,7 @@ function adminBotReply(ml) {
   if (/sync|pending csv|awaiting/.test(ml)) {
     const list = (d.sessions || []).filter(s => isPastSession(s) && s.status !== 'Cancelled' && Number(s.registered) && !Number(s.log_count));
     if (!list.length) return 'All finished sessions have their attendance synced. ✅';
-    return `**${list.length} session(s)** awaiting attendance sync:\n` + list.slice(0, 5).map(s => `• ${s.title} (${fmtDateShort(s.start)})`).join('\n') + '\n\nGo to Certificate Management → Sync Now.';
+    return `**${list.length} session(s)** awaiting attendance sync:\n` + list.slice(0, 5).map(s => `• ${s.title} (${fmtDateShort(s.start)})`).join('\n') + '\n\nGo to Session and Attendance → Attendance Sync.';
   }
   if (/payment|revenue/.test(ml)) {
     return `Payment summary:\n💚 Collected: **${fmtMoney(o.revenue_total)}** (${fmtMoney(o.revenue_month)} this month)\n⏳ Pending: **${fmtMoney(o.pending_amount)}** (${fmtInt(o.pending_payments)} payment(s))\n🎁 Waivers: ${fmtInt(o.waivers)}\nTotal transactions: ${fmtInt(o.transactions)}`;
