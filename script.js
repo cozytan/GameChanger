@@ -734,11 +734,13 @@ sb.auth.onAuthStateChange((event) => {
 // ════════════════════════════════════════════════
 function mShowPage(p) {
   // Career Path now lives inside Session and Attendance (its own tab)
-  if (p === 'career') { mShowPage('attendance'); const t = document.getElementById('m-tab-career'); if (t) { aSwitchTab(t, 'ma-career'); renderSkillTree(); } return; }
+  // Career Path lives inside Session and Attendance (chosen from the sidebar dropdown)
+  if (p === 'career') { mShowSessionsView('career'); return; }
   document.querySelectorAll('#member-app .page').forEach(x=>x.classList.remove('active'));
   document.querySelectorAll('#member-app .nav-item').forEach(x=>x.classList.remove('active'));
   document.getElementById('mp-'+p).classList.add('active');
   const n=document.getElementById('mn-'+p); if(n) n.classList.add('active');
+  if (p === 'attendance') setSessionsPanel('sessions');
   const t={home:'Dashboard',attendance:'Session and Attendance',payments:'Payment',certificates:'Certificate',profile:'My Profile'};
   document.getElementById('m-page-title').textContent = t[p]||p;
   window.scrollTo(0,0);
@@ -2099,7 +2101,50 @@ function openActMenu(ev, userId) {
   menu.style.left = Math.max(8, Math.min(r.right - w, window.innerWidth - w - 8)) + 'px';
   menu.style.top = (r.bottom + h + 8 > window.innerHeight ? r.top - h - 4 : r.bottom + 4) + 'px';
 }
-function closeActMenu() { document.getElementById('act-menu')?.classList.remove('open'); }
+function closeActMenu() {
+  document.getElementById('act-menu')?.classList.remove('open');
+  document.querySelectorAll('.nav-item.dd-open').forEach(x => x.classList.remove('dd-open'));
+}
+
+// ── Sidebar dropdown (member: Session and Attendance ▾ → Sessions & Attendance / Career Path)
+const NAV_DROPDOWNS = {
+  attendance: () => [
+    { key: 'sessions', label: '📅 Sessions & Attendance', call: "mShowSessionsView('sessions')" },
+    { key: 'career',   label: '🗺 Career Path',           call: "mShowSessionsView('career')" }
+  ]
+};
+let currentSessionsView = 'sessions';
+function openNavDropdown(ev, key) {
+  ev.preventDefault(); ev.stopPropagation();
+  hideNavPeek();
+  const item = ev.currentTarget, menu = document.getElementById('act-menu');
+  if (!menu || !NAV_DROPDOWNS[key]) return;
+  if (menu.classList.contains('open') && menu.dataset.user === 'nav-' + key) { closeActMenu(); return; }
+  closeActMenu();
+  const onPage = document.getElementById('mp-attendance')?.classList.contains('active');
+  menu.innerHTML = NAV_DROPDOWNS[key]().map(o => {
+    const cur = onPage && o.key === currentSessionsView;
+    return `<button class="act-item${cur ? ' current' : ''}" onclick="closeActMenu();${o.call}">${o.label}${cur ? '<span class="act-check">✓</span>' : ''}</button>`;
+  }).join('');
+  menu.dataset.user = 'nav-' + key;
+  item.classList.add('dd-open');
+  menu.classList.add('open');
+  const r = item.getBoundingClientRect();
+  menu.style.minWidth = r.width + 'px';
+  menu.style.left = r.left + 'px';
+  const h = menu.offsetHeight;
+  menu.style.top = (r.bottom + h + 8 > window.innerHeight ? r.top - h - 4 : r.bottom + 4) + 'px';
+}
+function setSessionsPanel(view) {
+  currentSessionsView = view === 'career' ? 'career' : 'sessions';
+  document.getElementById('ma-sessions')?.classList.toggle('active', currentSessionsView === 'sessions');
+  document.getElementById('ma-career')?.classList.toggle('active', currentSessionsView === 'career');
+}
+function mShowSessionsView(view) {
+  mShowPage('attendance');
+  setSessionsPanel(view);
+  if (view === 'career') { renderSkillTree(); setText('m-page-title', 'Session and Attendance · Career Path'); }
+}
 document.addEventListener('click', e => { if (!e.target.closest('#act-menu')) closeActMenu(); });
 window.addEventListener('scroll', closeActMenu, true);
 window.addEventListener('resize', closeActMenu);
@@ -2396,7 +2441,7 @@ const NAV_PEEK = {
 let peekTimer = null;
 function showNavPeek(item) {
   const fn = NAV_PEEK[item.id], box = document.getElementById('nav-peek');
-  if (!fn || !box) return;
+  if (!fn || !box || item.classList.contains('dd-open')) return;
   const loading = item.id.startsWith('an-') ? !adminData : !memberData;
   let p; try { p = fn(); } catch (e) { return; }
   box.innerHTML = `<div class="pk-head"><span class="pk-ic">${p.icon}</span><span>${esc(p.title)}</span><span class="pk-go">Open →</span></div>${loading ? '<div class="pk-note">Loading…</div>' : p.body}`;

@@ -392,3 +392,11 @@ tr.is-archived td{opacity:.6;}
 .sidebar .nav-item.active::before{height:60%;}
 .pk-head > span:nth-child(2){flex:1;min-width:0;}
 .pk-go{white-space:nowrap;}
+/* sidebar dropdown (Session and Attendance ▾) */
+.nav-caret{margin-left:auto;font-size:10px;opacity:.6;transition:transform .2s ease,opacity .2s;}
+.nav-item:hover .nav-caret,.nav-item.dd-open .nav-caret{opacity:1;}
+.nav-item.dd-open .nav-caret{transform:rotate(180deg);}
+.act-item.current{background:var(--blue-l);color:var(--blue);font-weight:600;}
+.act-check{margin-left:auto;font-weight:700;}
+.sidebar .nav-item{white-space:nowrap;}
+.nav-caret{font-size:9px;padding-left:4px;}
