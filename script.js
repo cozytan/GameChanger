@@ -756,13 +756,12 @@ sb.auth.onAuthStateChange((event) => {
 // ════════════════════════════════════════════════
 function mShowPage(p) {
   // Career Path now lives inside Session and Attendance (its own tab)
-  // Career Path is the lower section of Session and Attendance
-  if (p === 'career') { mShowPage('attendance'); renderSkillTree(); setTimeout(() => document.getElementById('ma-career')?.scrollIntoView({ behavior: 'smooth' }), 30); return; }
   document.querySelectorAll('#member-app .page').forEach(x=>x.classList.remove('active'));
   document.querySelectorAll('#member-app .nav-item').forEach(x=>x.classList.remove('active'));
   document.getElementById('mp-'+p).classList.add('active');
   const n=document.getElementById('mn-'+p); if(n) n.classList.add('active');
-  const t={home:'Dashboard',attendance:'Session and Attendance',payments:'Payment',certificates:'Certificate',profile:'My Profile'};
+  if (p === 'career') renderSkillTree();
+  const t={home:'Dashboard',attendance:'Session and Attendance',career:'Career Path',payments:'Payment',certificates:'Certificate',profile:'My Profile'};
   document.getElementById('m-page-title').textContent = t[p]||p;
   window.scrollTo(0,0);
 }
@@ -776,9 +775,9 @@ function aShowPage(p) {
   document.querySelectorAll('#admin-app .page').forEach(x=>x.classList.remove('active'));
   document.querySelectorAll('#admin-app .nav-item').forEach(x=>x.classList.remove('active'));
   document.getElementById('ap-'+p).classList.add('active');
-  const n=document.getElementById('an-'+(p==='member-form'?'members':p)); if(n) n.classList.add('active');
+  const n=document.getElementById('an-'+p); if(n) n.classList.add('active');
   closeActMenu();
-  const t={home:'Analytic Dashboard',members:'Data Management',sessions:'Session and Attendance',attendance:'Certificate',payments:'Payment',profile:'My Profile','member-form':memberFormUserId?'Edit Member':'Add Member'};
+  const t={home:'Analytic Dashboard',members:'Data Management',sessions:'Session and Attendance',attendance:'Certificate',payments:'Payment',profile:'My Profile'};
   document.getElementById('a-page-title').textContent = t[p]||p;
   window.scrollTo(0,0);
 }
@@ -851,7 +850,6 @@ const AREA_STYLE = {
 };
 function areaStyle(a) { return AREA_STYLE[a] || { short: a || '—', badge: 'bg-gr', color: 'var(--t2)', light: 'var(--bg)', grad: 'linear-gradient(135deg,#37474F,#546E7A)', seal: '🏆' }; }
 function areaBadge(a) { return a ? `<span class="badge ${areaStyle(a).badge}">${esc(areaStyle(a).short)}</span>` : '—'; }
-const BAR_COLORS = ['var(--red)', 'var(--blue)', 'var(--green)', 'var(--purple)', 'var(--teal)', 'var(--orange)'];
 
 async function rpc(name, args) {
   const { data, error } = await sb.rpc(name, args);
@@ -887,7 +885,6 @@ let editingSessionId = null;
 let openCertificate = null;
 let adminMe = null;          // result of admin_whoami()   (06_member_management.sql)
 let adminMembers = null;     // result of admin_members()  (06_member_management.sql)
-let memberFormUserId = null; // null = adding, otherwise the account being edited
 let archiveTargetId = null;
 
 // ════════════════════════════════════════════════
@@ -1521,7 +1518,7 @@ function fillAdminSelects() {
   fill('a-mem-province', d.provinces || [], 'All Provinces');
   fill('a-mem-level', ['Entry', 'Mid', 'Master'], 'All Levels');
   fill('acs-area', d.areas || [], null);
-  fill('mf-expertise', d.areas || [], '— Not set —');
+  fillReportSelects();
   const roleSel = document.getElementById('a-mem-role'); if (roleSel) roleSel.style.display = isSuperAdmin() ? '' : 'none';
   const withRegs = (d.sessions || []).filter(s => Number(s.registered) > 0);
   fill('a-cert-filter', withRegs.map(s => s.session_id), 'All Sessions', id => { const s = withRegs.find(x => x.session_id === id); return `${s.title} · ${fmtDateShort(s.start)}`; });
@@ -1557,51 +1554,6 @@ function renderAdminHome() {
   setHtml('a-home-payments', pays.length ? pays.map((p, i) => `
     <div style="display:flex;align-items:center;gap:9px;font-size:13px;"><div style="width:27px;height:27px;border-radius:50%;background:${['var(--blue-l)', 'var(--yellow-l)', 'var(--red-l)'][i]};display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;color:${['var(--blue)', '#B45309', 'var(--red)'][i]};">${esc(initialsOf(p.member))}</div><div style="flex:1;"><div style="font-weight:600;">${esc(p.member || '—')}</div><div style="font-size:11px;color:var(--t3);">${esc(p.session || '—')}</div></div><div style="text-align:right;"><div style="font-weight:700;">${fmtMoney(p.amount)}</div>${paymentBadge(p.status)}</div></div>`).join('')
     : emptyState('💳', 'No payments yet.'));
-}
-
-function barRows(list, valueKey, labelFn, emptyText) {
-  if (!list.length) return emptyState('📊', emptyText);
-  return list.map((x, i) => {
-    const v = x[valueKey];
-    const c = BAR_COLORS[i % BAR_COLORS.length];
-    return `<div class="cbr"><div class="cbl">${esc(labelFn(x))}</div><div class="cbt"><div class="cbf" style="width:${v == null ? 0 : v}%;background:${c};"></div></div><div class="cbv" style="color:${c};">${v == null ? '—' : v + '%'}</div></div>`;
-  }).join('');
-}
-function renderAnalytics() {
-  const d = ad();
-  setHtml('a-an-province', barRows(d.by_province || [], 'rate', x => x.name, 'No member data yet.'));
-  setHtml('a-an-area', barRows((d.by_area || []).slice(0, 5), 'rate', x => areaStyle(x.name).short, 'No sessions yet.'));
-
-  const cs = d.cert_status || {};
-  const segs = [['Issued', Number(cs.issued || 0), 'var(--green)'], ['Pending', Number(cs.pending || 0), 'var(--blue)'], ['Failed / below 80%', Number(cs.failed || 0) + Number(cs.below || 0), 'var(--yellow)']];
-  const total = segs.reduce((a, s) => a + s[1], 0);
-  if (!total) setHtml('a-an-certs', emptyState('📜', 'No certificates yet.'));
-  else {
-    const C = 2 * Math.PI * 34; let off = 0;
-    const arcs = segs.filter(s => s[1] > 0).map(s => { const len = C * s[1] / total; const a = `<circle cx="48" cy="48" r="34" fill="none" stroke="${s[2]}" stroke-width="11" stroke-dasharray="${len.toFixed(1)} ${(C - len).toFixed(1)}" stroke-dashoffset="${(-off).toFixed(1)}" transform="rotate(-90 48 48)"/>`; off += len; return a; }).join('');
-    setHtml('a-an-certs', `<div style="display:flex;align-items:center;gap:14px;"><svg width="96" height="96" viewBox="0 0 96 96"><circle cx="48" cy="48" r="34" fill="none" stroke="#F1F5F9" stroke-width="11"/>${arcs}</svg>
-      <div style="display:flex;flex-direction:column;gap:7px;">${segs.map(s => `<div style="display:flex;align-items:center;gap:7px;font-size:12px;"><div style="width:9px;height:9px;border-radius:50%;background:${s[2]};flex-shrink:0;"></div><div><div style="font-weight:600;">${s[0]}</div><div style="font-size:11px;color:var(--t3);">${fmtInt(s[1])} · ${Math.round(100 * s[1] / total)}%</div></div></div>`).join('')}</div></div>`);
-  }
-
-  const now = new Date();
-  setText('a-an-insight-title', `Insights — ${now.toLocaleDateString('en-PH', { month: 'long', year: 'numeric', timeZone: TZ })}`);
-  const tips = [];
-  const areasRated = (d.by_area || []).filter(x => x.rate != null);
-  const provRated = (d.by_province || []).filter(x => x.rate != null);
-  if (areasRated.length) tips.push(`🔴 <strong>${esc(areasRated[0].name)}</strong> sessions have the highest attendance (${areasRated[0].rate}%).`);
-  if (provRated.length > 1) { const low = provRated[provRated.length - 1]; tips.push(`🔵 <strong>${esc(low.name)}</strong> has the lowest attendance (${low.rate}%) — consider targeted outreach.`); }
-  if (Number(d.overview?.awaiting_sync)) tips.push(`🟡 ${fmtInt(d.overview.awaiting_sync)} finished session(s) still need their Zoom attendance synced.`);
-  if (Number(d.overview?.pending_payments)) tips.push(`💳 ${fmtInt(d.overview.pending_payments)} payment(s) are still pending (${fmtMoney(d.overview.pending_amount)}).`);
-  setHtml('a-an-insights', tips.length ? tips.join('<br>') : (adminData ? 'Not enough data yet. Insights appear once sessions have registrations and attendance records.' : 'Data could not be loaded.'));
-
-  const months = d.monthly || [];
-  setHtml('a-an-monthly', months.length ? months.map((m, i) => {
-    const current = i === months.length - 1;
-    const r = m.rate;
-    const badge = r == null ? '—' : `<span class="badge ${r >= 80 ? 'bg-g' : r >= 70 ? 'bg-y' : 'bg-r'}">${r}%</span>`;
-    const flag = r == null ? (Number(m.sessions) ? '⏳ Awaiting attendance' : '—') : r >= 85 ? '🔥 High engagement' : r < 75 ? '⚠ Below target' : '—';
-    return `<tr><td>${fmtMonth(m.month)}${current ? ' (MTD)' : ''}</td><td>${fmtInt(m.sessions)}</td><td>${fmtInt(m.attendees)}</td><td>${fmtInt(m.certs)}</td><td>${fmtMoney(m.revenue)}</td><td>${badge}</td><td>${flag}</td></tr>`;
-  }).join('') : emptyRow(7, 'No data yet.'));
 }
 
 // ── Members (Data Management) ──
@@ -2065,23 +2017,6 @@ function setFieldError(id, msg) {
 function clearFormErrors(ids) { ids.forEach(id => setFieldError(id, '')); }
 
 // Rules for the Add / Edit Member page (depends on add vs edit and role)
-function memberFormRules() {
-  const editing = !!memberFormUserId;
-  const midInput = document.getElementById('mf-mid');
-  const rules = {
-    'mf-name': v => RULES.name(v),
-    'mf-email': v => RULES.email(v),
-    'mf-phone': v => RULES.phone(v),
-    'mf-pass': v => RULES.password(v, { required: !editing }),
-    'mf-province': RULES.select('a province'),
-    'mf-company': RULES.text('Company'),
-    'mf-department': RULES.text('Department'),
-    'mf-position': RULES.text('Position'),
-    'mf-expertise': RULES.select('an area of expertise')
-  };
-  if (isSuperAdmin() && midInput && !midInput.disabled) rules['mf-mid'] = v => RULES.memberId(v);
-  return rules;
-}
 function profileFormRules() {
   return {
     'ep-name': v => RULES.name(v, { full: false }),
@@ -2144,7 +2079,7 @@ function memberActions(m) {
     if (sup) acts.push({ key: 'restore', label: '♻ Restore', cls: 'good', call: `restoreMember('${id}')` });
     return acts;
   }
-  if (sup) acts.push({ key: 'edit', label: '✏ Edit', call: `openMemberForm('${id}')` });
+  if (sup || m.role === 'member') acts.push({ key: 'edit', label: '✏ Edit', call: `openEditMember('${id}')` });
   if (sup || m.role === 'member') acts.push({ key: 'archive', label: '🗄 Archive', cls: 'danger', call: `openArchiveMember('${id}')` });
   return acts;
 }
@@ -2174,139 +2109,6 @@ window.addEventListener('scroll', closeActMenu, true);
 window.addEventListener('resize', closeActMenu);
 
 // ── Add / Edit Member page ──
-const MF_ACTIONS_HTML = document.getElementById('mf-actions')?.innerHTML || '';
-function openMemberForm(userId) {
-  if (!userId) { showToast('Members create their own accounts through the Register page.', 'info'); return; }
-  setHtml('mf-actions', MF_ACTIONS_HTML);
-  if (!adminMembers) { showToast('Run supabase/06_member_management.sql first to enable adding members.', 'error', 6000); return; }
-  const m = userId ? membersSource().find(x => x.user_id === userId) : null;
-  if (userId && (!m || !isSuperAdmin())) { showToast('Only a super admin can edit members.', 'error'); return; }
-  memberFormUserId = m ? m.user_id : null;
-  const sup = isSuperAdmin();
-  const v = (id, val) => { const el = document.getElementById(id); if (el) el.value = val ?? ''; };
-  setText('mf-heading', m ? `Edit ${m.role === 'member' ? 'Member' : 'Admin'}` : 'Add Member');
-  setText('mf-subheading', m ? `Changes are saved to ${m.full_name}'s account.` : 'Create an account for a new member. They can sign in right away with the email and password you set.');
-  v('mf-name', m?.full_name); v('mf-email', m?.email); v('mf-phone', m?.phone);
-  v('mf-pass', m ? '' : ''); v('mf-province', m?.province || ''); v('mf-company', m?.company);
-  v('mf-department', m?.department); v('mf-position', m?.position); v('mf-expertise', m?.expertise || '');
-  v('mf-level', m?.level || 'Entry'); v('mf-status', m && !m.archived ? m.status : 'Active');
-  v('mf-role', m?.role || 'member'); v('mf-mid', m ? m.member_id : '');
-  setText('mf-email-hint', m ? 'Sign-in email. "Forgot password?" sends the reset link here, so it must be a real inbox.' : 'They sign in with this email. Password reset links are sent here.');
-  setText('mf-pass-label', m ? 'New Password' : 'Password *');
-  document.getElementById('mf-pass').placeholder = m ? 'Leave blank to keep the current password' : 'At least 6 characters';
-  setText('mf-pass-hint', m ? 'Only fill this in to reset their password.' : 'Share this password with the member. They can change it anytime with "Forgot password?".');
-  document.getElementById('mf-confirm-wrap').style.display = m ? 'none' : '';
-  document.getElementById('mf-confirm').checked = true;
-  document.getElementById('mf-access-card').style.display = sup ? '' : 'none';
-  document.querySelectorAll('.mf-super-only').forEach(el => el.style.display = sup ? '' : 'none');
-  document.getElementById('mf-save-another').style.display = m ? 'none' : '';
-  setText('mf-save', m ? 'Save Changes' : 'Save Member');
-  document.getElementById('mf-err').style.display = 'none';
-  document.getElementById('mf-done').style.display = 'none';
-  clearFormErrors(['mf-name', 'mf-email', 'mf-phone', 'mf-pass', 'mf-province', 'mf-company', 'mf-department', 'mf-position', 'mf-expertise', 'mf-mid']);
-  attachLiveValidation(memberFormRules);
-  if (!m) generateMemberPassword();
-  onMemberRoleChange();
-  aShowPage('member-form');
-  setText('a-page-title', m ? 'Edit Member' : 'Add Member');
-}
-function generateMemberPassword() {
-  const letters = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz', digits = '23456789', all = letters + digits;
-  const rnd = crypto.getRandomValues(new Uint32Array(10));
-  const pick = (set, n) => set[n % set.length];
-  const chars = Array.from(rnd, (n, i) => i === 0 ? pick(letters, n) : i === 1 ? pick(digits, n) : pick(all, n));
-  for (let i = chars.length - 1; i > 0; i--) { const j = rnd[i] % (i + 1); [chars[i], chars[j]] = [chars[j], chars[i]]; }
-  document.getElementById('mf-pass').value = 'GC-' + chars.join('');
-  setFieldError('mf-pass', '');
-}
-function onMemberRoleChange() {
-  const role = document.getElementById('mf-role').value;
-  const hints = { member: 'Members use the member portal.', admin: 'Admins can manage sessions, attendance and payments, and add or remove members.', super_admin: 'Super admins can do everything, including editing members and creating admins.' };
-  setText('mf-role-hint', hints[role]);
-  const editingMember = memberFormUserId && membersSource().find(x => x.user_id === memberFormUserId);
-  const mid = document.getElementById('mf-mid');
-  const roleChanges = editingMember && (editingMember.role === 'member') !== (role === 'member');
-  mid.disabled = role !== 'member' || roleChanges;
-  if (mid.disabled) mid.value = editingMember && !roleChanges ? editingMember.member_id : '';
-  setText('mf-mid-hint', role !== 'member' || roleChanges
-    ? (roleChanges ? 'A new ID is assigned because the account type changes.' : 'Admins get the next ADM-YYYY-NNNN ID.')
-    : (editingMember ? 'Change only if needed — must be unique.' : 'Blank = next HRC-YYYY-NNNN number.'));
-  updateMemberPreview();
-}
-function updateMemberPreview() {
-  const g = id => (document.getElementById(id)?.value || '').trim();
-  const name = g('mf-name'), role = isSuperAdmin() ? g('mf-role') : 'member';
-  setText('mf-pv-av', initialsOf(name));
-  setText('mf-pv-name', name || 'New member');
-  setText('mf-pv-id', g('mf-mid') || (memberFormUserId ? '—' : 'ID assigned on save'));
-  setText('mf-pv-email', g('mf-email'));
-  setText('mf-pv-position', g('mf-position'));
-  const exp = g('mf-expertise');
-  setHtml('mf-pv-badges', (ROLE_BADGE[role] || '<span class="badge bg-b">👤 Member</span>')
-    + (exp ? areaBadge(exp) : '')
-    + (isSuperAdmin() ? `<span class="badge bg-y">${esc(g('mf-level') || 'Entry')}</span>` : ''));
-}
-async function saveMemberForm(addAnother) {
-  const g = id => (document.getElementById(id)?.value || '').trim();
-  const err = document.getElementById('mf-err');
-  const fail = t => { err.textContent = t; err.style.display = 'block'; err.scrollIntoView({ block: 'center', behavior: 'smooth' }); };
-  err.style.display = 'none';
-  const editing = !!memberFormUserId, sup = isSuperAdmin();
-  if (!runValidation(memberFormRules())) return fail('Please fix the fields marked in red.');
-  document.getElementById('mf-phone').value = normalizePhPhone(g('mf-phone')).value;
-
-  const data = { full_name: g('mf-name'), phone: g('mf-phone'), province: g('mf-province'), company: g('mf-company'),
-                 department: g('mf-department'), position: g('mf-position'), expertise: g('mf-expertise') };
-  if (sup) Object.assign(data, { role: g('mf-role'), level: g('mf-level'), status: g('mf-status') });
-  if (sup && !document.getElementById('mf-mid').disabled && g('mf-mid')) data.member_id = g('mf-mid');
-  if (g('mf-pass')) data.password = g('mf-pass');
-
-  const btns = document.querySelectorAll('#mf-actions button'); btns.forEach(b => b.disabled = true);
-  try {
-    if (editing) {
-      await rpc('admin_update_member', { p_user: memberFormUserId, p_data: data });
-      const before = membersSource().find(x => x.user_id === memberFormUserId);
-      if (before && g('mf-email').toLowerCase() !== String(before.email || '').toLowerCase()) {
-        await rpc('admin_set_email', { p_user: memberFormUserId, p_email: g('mf-email').toLowerCase() });
-      }
-      showToast(`${data.full_name} was updated.`, 'success');
-      await loadAdminData();
-      aShowPage('members');
-      return;
-    }
-    data.email = g('mf-email').toLowerCase();
-    data.password = g('mf-pass');
-    data.confirm_email = document.getElementById('mf-confirm').checked;
-    const r = await rpc('admin_create_member', { p_data: data });
-    await loadAdminData();
-    const done = document.getElementById('mf-done');
-    done.innerHTML = `<div style="font-family:var(--font-h);font-size:14px;font-weight:700;color:var(--green);margin-bottom:6px;">✅ ${esc(data.full_name)} was added (${esc(r.member_id)})</div>
-      <div style="font-size:13px;color:var(--t2);line-height:1.7;">Share these sign-in details with them:<br>
-      ${r.role === 'member' ? 'Email' : 'Admin ID'}: <strong>${esc(r.role === 'member' ? r.email : r.member_id)}</strong><br>
-      Password: <strong>${esc(data.password)}</strong></div>
-      <button class="btn btn-ghost btn-sm" style="margin-top:9px;" onclick="copyNewMemberDetails(this)" data-text="${esc(`GameChanger sign-in\n${r.role === 'member' ? 'Email' : 'Admin ID'}: ${r.role === 'member' ? r.email : r.member_id}\nPassword: ${data.password}\n${APP_URL}`)}">📋 Copy sign-in details</button>
-      ${data.confirm_email ? '' : '<div style="font-size:12px;color:#B45309;margin-top:8px;">Their email is not confirmed yet — they must use the confirmation link before signing in.</div>'}`;
-    done.style.display = 'block';
-    showToast(`${data.full_name} was added.`, 'success');
-    if (addAnother) {
-      ['mf-name', 'mf-email', 'mf-phone', 'mf-position', 'mf-mid'].forEach(id => { document.getElementById(id).value = ''; setFieldError(id, ''); });
-      generateMemberPassword();
-      updateMemberPreview();
-      document.getElementById('mf-name').focus();
-    } else {
-      setHtml('mf-actions', `<button class="btn btn-ghost" onclick="openMemberForm()">+ Add another</button><button class="btn btn-red" onclick="aShowPage('members')">Done</button>`);
-    }
-    done.scrollIntoView({ block: 'center', behavior: 'smooth' });
-  } catch (e) {
-    showServerFieldError(e, 'mf');
-    fail(friendlyAuthError(e));
-  } finally {
-    btns.forEach(b => b.disabled = false);
-  }
-}
-function copyNewMemberDetails(btn) {
-  navigator.clipboard?.writeText(btn.dataset.text).then(() => showToast('Sign-in details copied.', 'success', 1800)).catch(() => {});
-}
 
 // ── Archive (remove) / Restore ──
 function openArchiveMember(userId) {
@@ -2360,8 +2162,8 @@ function renderAdminProfile() {
   [['fullname', me.full_name], ['email', me.email], ['phone', me.phone], ['province', me.province], ['company', me.company],
    ['department', me.department], ['position', me.position]].forEach(([k, v]) => setText('a-prof-' + k, v || '—'));
   setHtml('a-prof-perms', me.is_super
-    ? '✅ View all members and admins<br>✅ Edit any member (details, level, status, password, account type — make a member an admin here)<br>✅ Archive and restore accounts<br>✅ Manage sessions, attendance, certificates and payments'
-    : '✅ View members<br>✅ Archive members<br>✅ Manage sessions, attendance, certificates and payments<br>🔒 Editing member info, restoring archived accounts and creating admins is for super admins');
+    ? '✅ View all members and admins<br>✅ Edit area of expertise, mastery level and account status<br>✅ Archive and restore accounts<br>✅ Manage sessions, attendance, certificates and payments'
+    : '✅ View members<br>✅ Edit a member\'s area of expertise, mastery level and account status<br>✅ Archive members<br>✅ Manage sessions, attendance, certificates and payments<br>🔒 Restoring archived accounts is for super admins. Personal details are changed by each member from their own profile.');
 }
 async function sendMyPasswordReset() {
   const email = adminMe?.email || loggedInUser?.email;
@@ -2444,7 +2246,9 @@ const NAV_PEEK = {
   'mn-home': () => { const st = md().stats || {}, n = memberNextSession(); const has = Number(st.attended || 0) + Number(st.missed || 0) > 0;
     return { icon: '🏠', title: 'Dashboard', body: peekRows([['Attendance', has ? st.rate + '%' : '—', has && st.rate >= 80 ? 'ok' : ''], ['Certificates', fmtInt(st.certificates)], ['Province rank', st.province_rank?.rank ? '#' + st.province_rank.rank : '—']]) + (n ? `<div class="pk-note">Next: ${esc(n.title)} · ${fmtDateShort(n.start)}</div>` : '') }; },
   'mn-attendance': () => { const d = md(), st = d.stats || {}, n = memberNextSession(), nodes = d.skill_tree || [];
-    return { icon: '📅', title: 'Session and Attendance', body: peekRows([['Upcoming sessions', fmtInt((d.upcoming || []).length)], ['Registered', fmtInt((d.upcoming || []).filter(s => s.is_registered).length)], ['Attended / missed', `${fmtInt(st.attended)} / ${fmtInt(st.missed)}`], ['Career path', nodes.length ? `${nodes.filter(x => x.status === 'COMPLETED').length} of ${nodes.length} done` : 'Not set up']]) + (n ? `<div class="pk-note">Next: ${esc(n.title)} · ${fmtDateShort(n.start)} ${fmtTime(n.start)}</div>` : '<div class="pk-note">No upcoming sessions yet.</div>') }; },
+    return { icon: '📅', title: 'Session and Attendance', body: peekRows([['Upcoming sessions', fmtInt((d.upcoming || []).length)], ['Registered', fmtInt((d.upcoming || []).filter(s => s.is_registered).length)], ['Attended / missed', `${fmtInt(st.attended)} / ${fmtInt(st.missed)}`]]) + (n ? `<div class="pk-note">Next: ${esc(n.title)} · ${fmtDateShort(n.start)} ${fmtTime(n.start)}</div>` : '<div class="pk-note">No upcoming sessions yet.</div>') }; },
+  'mn-career': () => { const d = md(), nodes = d.skill_tree || [], act = nodes.filter(x => x.status === 'IN_PROGRESS');
+    return { icon: '🗺', title: 'Career Path', body: nodes.length ? peekRows([['Mastery level', d.me?.mastery_level || '—'], ['Completed', `${nodes.filter(x => x.status === 'COMPLETED').length} of ${nodes.length}`, 'ok'], ['In progress', fmtInt(act.length)], ['Locked', fmtInt(nodes.filter(x => x.status === 'LOCKED').length)]]) + (act[0] ? `<div class="pk-note">Working on: ${esc(act[0].title)} · ${Math.round(act[0].progress)}%</div>` : '') : '<div class="pk-note">Your career path will appear here once it is set up.</div>' }; },
   'mn-payments': () => { const tx = mp().transactions || [], dues = memberDues();
     return { icon: '💳', title: 'Payment', body: peekRows([['Awaiting payment', dues.length ? `${dues.length} · ${fmtMoney(dues.reduce((a, r) => a + Number(r.fee || 0), 0))}` : 'None', dues.length ? 'warn' : 'ok'], ['Total paid', fmtMoney(tx.filter(t => t.status === 'PAID').reduce((a, t) => a + Number(t.amount || 0), 0))], ['Transactions', fmtInt(tx.length)]]) }; },
   'mn-certificates': () => { const c = md().certificates || [];
@@ -2486,6 +2290,400 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 });
 window.addEventListener('scroll', hideNavPeek, true);
+
+// ════════════════════════════════════════════════
+// ANALYTICS REPORT  — everything is computed here from admin_dashboard()
+// Filters: General (all time) · By year · By date & time · Specific session
+//          + optional Area and Province
+// ════════════════════════════════════════════════
+let trendView = 'chart';
+function barRows(rows, emptyText) {
+  // single-series magnitude → one hue; values in ink; hover tooltip on every bar
+  if (!rows.length) return emptyState('📊', emptyText);
+  return rows.map(r => `<div class="cbr" data-tip="${esc(r.tip)}"><div class="cbl">${esc(r.label)}</div><div class="cbt"><div class="cbf rep-bar" style="width:${r.value == null ? 0 : r.value}%;"></div></div><div class="cbv rep-val">${r.value == null ? '—' : r.value + '%'}</div></div>`).join('');
+}
+function rateOf(regs) {
+  const att = regs.filter(r => r.attendance_status === 'ATTENDED').length;
+  const done = regs.filter(r => ['ATTENDED', 'INCOMPLETE', 'ABSENT'].includes(r.attendance_status)).length;
+  return { att, done, rate: done ? Math.round(100 * att / done) : null };
+}
+function manilaTs(local) { return local ? new Date(local + ':00+08:00') : null; }   // datetime-local value → Manila time
+function toLocalInput(d) { const p = manilaParts(d.toISOString()); return `${p.date}T${p.time}`; }
+function yearOf(iso) { return Number(manilaParts(iso).date.slice(0, 4)); }
+function monthKey(iso) { return manilaParts(iso).date.slice(0, 7); }
+
+function fillReportSelects() {
+  const d = ad(), all = (d.sessions || []).filter(s => s.status !== 'Draft');
+  const keep = id => document.getElementById(id)?.value;
+  const yearSel = document.getElementById('rep-year');
+  if (yearSel) {
+    const k = keep('rep-year'), cur = yearOf(new Date().toISOString());
+    const years = [...new Set([cur, ...all.map(s => yearOf(s.start))])].sort((a, b) => b - a);
+    yearSel.innerHTML = years.map(y => `<option value="${y}">${y}</option>`).join('');
+    if (k && years.includes(Number(k))) yearSel.value = k;
+  }
+  const sesSel = document.getElementById('rep-session');
+  if (sesSel) {
+    const k = keep('rep-session');
+    const list = [...all].sort((a, b) => new Date(b.start) - new Date(a.start));
+    sesSel.innerHTML = list.length ? list.map(s => `<option value="${esc(s.session_id)}">${esc(s.title)} · ${fmtDate(s.start)} ${fmtTime(s.start)}${s.status === 'Cancelled' ? ' (cancelled)' : ''}</option>`).join('') : '<option value="">No sessions yet</option>';
+    if (k && list.some(s => s.session_id === k)) sesSel.value = k;
+  }
+  const fillOpt = (id, values, first, label = v => v) => {
+    const el = document.getElementById(id); if (!el) return;
+    const k = el.value;
+    el.innerHTML = `<option value="">${first}</option>` + values.map(v => `<option value="${esc(v)}">${esc(label(v))}</option>`).join('');
+    if (values.includes(k)) el.value = k;
+  };
+  fillOpt('rep-area', d.areas || [], 'All areas');
+  fillOpt('rep-province', d.provinces || [], 'All provinces');
+  const from = document.getElementById('rep-from'), to = document.getElementById('rep-to');
+  if (from && !from.value) { const n = new Date(); const p = manilaParts(n.toISOString()); from.value = `${p.date.slice(0, 8)}01T00:00`; to.value = toLocalInput(n); }
+}
+function onReportTypeChange() {
+  const t = document.getElementById('rep-type').value;
+  document.querySelectorAll('#a-analytics-section [data-for]').forEach(el => {
+    el.style.display = el.dataset.for.split(' ').includes(t) ? '' : 'none';
+  });
+  renderAnalytics();
+}
+function resetReportFilters() {
+  document.getElementById('rep-type').value = 'general';
+  ['rep-area', 'rep-province'].forEach(id => { document.getElementById(id).value = ''; });
+  document.getElementById('rep-from').value = '';
+  fillReportSelects();
+  onReportTypeChange();
+}
+function setReportRange(preset) {
+  const now = new Date(), p = manilaParts(now.toISOString()), today = new Date(`${p.date}T00:00:00+08:00`);
+  const day = 864e5; let from, to = now;
+  const [y, m] = [Number(p.date.slice(0, 4)), Number(p.date.slice(5, 7))];
+  const firstOf = (yy, mm) => new Date(`${yy}-${String(mm).padStart(2, '0')}-01T00:00:00+08:00`);
+  if (preset === 'today') from = today;
+  else if (preset === '7d') from = new Date(today - 6 * day);
+  else if (preset === '30d') from = new Date(today - 29 * day);
+  else if (preset === 'month') from = firstOf(y, m);
+  else if (preset === 'lastmonth') { from = firstOf(m === 1 ? y - 1 : y, m === 1 ? 12 : m - 1); to = new Date(firstOf(y, m) - 60000); }
+  else if (preset === 'quarter') from = firstOf(y, Math.floor((m - 1) / 3) * 3 + 1);
+  document.getElementById('rep-from').value = toLocalInput(from);
+  document.getElementById('rep-to').value = toLocalInput(to);
+  renderAnalytics();
+}
+
+// Builds the data for the current filters
+function reportScope() {
+  const d = ad(), g = id => document.getElementById(id)?.value || '';
+  const type = g('rep-type') || 'general', area = g('rep-area'), prov = g('rep-province');
+  let sessions = (d.sessions || []).filter(s => s.status !== 'Draft');
+  let label = 'General report · All time', from = null, to = null;
+  if (type === 'session') {
+    sessions = sessions.filter(s => s.session_id === g('rep-session'));
+    label = sessions[0] ? `Session report · ${sessions[0].title} · ${fmtDate(sessions[0].start)} ${fmtTime(sessions[0].start)}` : 'Session report · choose a session';
+  } else {
+    sessions = sessions.filter(s => s.status !== 'Cancelled');
+    if (type === 'year') {
+      const y = Number(g('rep-year'));
+      sessions = sessions.filter(s => yearOf(s.start) === y);
+      from = new Date(`${y}-01-01T00:00:00+08:00`); to = new Date(`${y + 1}-01-01T00:00:00+08:00`);
+      label = `Yearly report · ${y}`;
+    } else if (type === 'range') {
+      from = manilaTs(g('rep-from')); to = manilaTs(g('rep-to'));
+      if (from && to && from > to) [from, to] = [to, from];
+      sessions = sessions.filter(s => (!from || new Date(s.start) >= from) && (!to || new Date(s.start) <= to));
+      label = `Date & time report · ${from ? `${fmtDate(from.toISOString())} ${fmtTime(from.toISOString())}` : 'start'} – ${to ? `${fmtDate(to.toISOString())} ${fmtTime(to.toISOString())}` : 'now'}`;
+    }
+    if (area) { sessions = sessions.filter(s => s.area === area); label += ` · ${area}`; }
+  }
+  if (prov) label += ` · ${prov}`;
+  const ids = new Set(sessions.map(s => s.session_id));
+  const people = [...(d.members || []), ...(adminMembers || [])];
+  const provOf = new Map(people.map(m => [m.user_id, m.province]));
+  const provByEmail = new Map(people.filter(m => m.email).map(m => [String(m.email).toLowerCase(), m.province]));
+  let regs = (d.registrations || []).filter(r => ids.has(r.session_id));
+  let pays = (d.payments || []).filter(p => ids.has(p.session_id));
+  if (prov) {
+    regs = regs.filter(r => provOf.get(r.user_id) === prov);
+    pays = pays.filter(p => provByEmail.get(String(p.email || '').toLowerCase()) === prov);
+  }
+  return { type, area, prov, label, sessions, regs, pays, from, to, provOf, people };
+}
+
+function renderAnalytics() {
+  if (!document.getElementById('rep-type')) return;
+  const t = document.getElementById('rep-type').value;
+  document.querySelectorAll('#a-analytics-section [data-for]').forEach(el => { el.style.display = el.dataset.for.split(' ').includes(t) ? '' : 'none'; });
+  const S = reportScope(), now = Date.now();
+  setText('rep-scope', S.label);
+  const held = S.sessions.filter(s => new Date(s.start) <= now);
+  const r = rateOf(S.regs);
+  const registered = S.prov ? S.regs.length : S.sessions.reduce((a, s) => a + Number(s.registered || 0), 0);
+  const capacity = S.sessions.reduce((a, s) => a + Number(s.capacity || 0), 0);
+  const certs = S.regs.filter(x => x.certificate_id && x.cert_status !== 'FAILED');
+  const paid = S.pays.filter(p => p.status === 'PAID').reduce((a, p) => a + Number(p.amount || 0), 0);
+  const pend = S.pays.filter(p => p.status === 'PENDING_PAYMENT').reduce((a, p) => a + Number(p.amount || 0), 0);
+  const below = S.regs.filter(x => x.attendance_status === 'INCOMPLETE' || x.attendance_status === 'ABSENT').length;
+  let sixth;
+  if (S.type === 'session') sixth = ['Below 80% / absent', fmtInt(below), `${fmtInt(S.regs.filter(x => x.attendance_status === 'REGISTERED').length)} awaiting sync`];
+  else if (S.from || S.to) {
+    const nm = S.people.filter(m => m.role !== 'admin' && m.role !== 'super_admin' && m.registered_at && (!S.from || new Date(m.registered_at) >= S.from) && (!S.to || new Date(m.registered_at) <= S.to) && (!S.prov || m.province === S.prov));
+    sixth = ['New members', fmtInt(new Map(nm.map(m => [m.user_id, 1])).size), 'joined in this period'];
+  } else sixth = ['Members', fmtInt(S.prov ? (ad().members || []).filter(m => m.province === S.prov).length : ad().overview?.total_members), S.prov ? `in ${S.prov}` : 'registered accounts'];
+  const kpi = (l, v, sub) => `<div class="rep-kpi"><div class="k-l">${l}</div><div class="k-v">${v}</div><div class="k-s">${sub}</div></div>`;
+  setHtml('rep-kpis', [
+    kpi('Sessions', fmtInt(S.sessions.length), `${fmtInt(held.length)} held · ${fmtInt(S.sessions.length - held.length)} upcoming`),
+    kpi('Registrations', fmtInt(registered), capacity && !S.prov ? `${Math.round(100 * registered / capacity)}% of ${fmtInt(capacity)} seats` : 'across these sessions'),
+    kpi('Attendance rate', r.rate == null ? '—' : r.rate + '%', r.done ? `${fmtInt(r.att)} of ${fmtInt(r.done)} attended ≥80%` : 'no synced attendance yet'),
+    kpi('Certificates', fmtInt(certs.length), `${fmtInt(certs.filter(x => x.cert_status === 'ISSUED').length)} issued · ${fmtInt(certs.filter(x => x.cert_status === 'PENDING').length)} pending`),
+    kpi('Revenue collected', fmtMoney(paid), pend ? `${fmtMoney(pend)} still pending` : 'no pending payments'),
+    kpi(...sixth)
+  ].join(''));
+
+  // province & area
+  const byProv = new Map();
+  S.regs.forEach(x => { const p = S.provOf.get(x.user_id); if (!p) return; (byProv.get(p) || byProv.set(p, []).get(p)).push(x); });
+  const provRows = [...byProv.entries()].map(([p, rs]) => { const q = rateOf(rs); return { label: p, value: q.rate, tip: `${p}: ${q.att} of ${q.done} attended ≥80%${q.rate == null ? ' (not synced yet)' : ` · ${q.rate}%`} · ${rs.length} registrations` }; })
+    .sort((a, b) => (b.value ?? -1) - (a.value ?? -1));
+  setHtml('a-an-province', barRows(provRows, 'No registrations in this report yet.'));
+  const sessById = new Map(S.sessions.map(s => [s.session_id, s]));
+  const byArea = new Map();
+  S.regs.forEach(x => { const a = sessById.get(x.session_id)?.area; if (!a) return; (byArea.get(a) || byArea.set(a, []).get(a)).push(x); });
+  const areaRows = [...byArea.entries()].map(([a, rs]) => { const q = rateOf(rs); const n = S.sessions.filter(s => s.area === a).length; return { label: areaStyle(a).short, value: q.rate, tip: `${a}: ${n} session(s) · ${q.att} of ${q.done} attended ≥80%` }; })
+    .sort((a, b) => (b.value ?? -1) - (a.value ?? -1));
+  setHtml('a-an-area', barRows(areaRows, 'No registrations in this report yet.'));
+
+  // certificate status donut (status colours, always labelled)
+  const segs = [
+    ['Issued', S.regs.filter(x => x.certificate_id && x.cert_status === 'ISSUED').length, '#2E7D32'],
+    ['Pending', S.regs.filter(x => x.certificate_id && x.cert_status === 'PENDING').length, '#1976D2'],
+    ['Below 80% / absent', below, '#E0A100'],
+    ['Failed', S.regs.filter(x => x.cert_status === 'FAILED').length, '#E53935']
+  ].filter((x, i) => i < 3 || x[1] > 0);
+  const total = segs.reduce((a, x) => a + x[1], 0);
+  if (!total) setHtml('a-an-certs', emptyState('📜', 'No certificate activity in this report.'));
+  else {
+    const C = 2 * Math.PI * 34; let off = 0;
+    const gap = segs.filter(x => x[1] > 0).length > 1 ? 2 : 0;
+    const arcs = segs.filter(x => x[1] > 0).map(x => { const len = C * x[1] / total; const a = `<circle cx="48" cy="48" r="34" fill="none" stroke="${x[2]}" stroke-width="11" stroke-dasharray="${Math.max(len - gap, 0.5).toFixed(1)} ${(C - len + gap).toFixed(1)}" stroke-dashoffset="${(-off).toFixed(1)}" transform="rotate(-90 48 48)" data-tip="${esc(`${x[0]}: ${fmtInt(x[1])} (${Math.round(100 * x[1] / total)}%)`)}" style="cursor:default;"/>`; off += len; return a; }).join('');
+    setHtml('a-an-certs', `<div style="display:flex;align-items:center;gap:14px;"><svg width="96" height="96" viewBox="0 0 96 96" style="flex-shrink:0;"><circle cx="48" cy="48" r="34" fill="none" stroke="#F1F5F9" stroke-width="11"/>${arcs}<text x="48" y="46" text-anchor="middle" font-size="15" font-weight="800" fill="#0F172A">${fmtInt(total)}</text><text x="48" y="59" text-anchor="middle" font-size="8" fill="#94A3B8">registrations</text></svg>
+      <div style="display:flex;flex-direction:column;gap:7px;">${segs.map(x => `<div style="display:flex;align-items:center;gap:7px;font-size:12px;"><div style="width:9px;height:9px;border-radius:50%;background:${x[2]};flex-shrink:0;"></div><div><div style="font-weight:600;color:var(--t1);">${x[0]}</div><div style="font-size:11px;color:var(--t3);">${fmtInt(x[1])} · ${Math.round(100 * x[1] / total)}%</div></div></div>`).join('')}</div></div>`);
+  }
+
+  // single session: detail + participants instead of trend / list
+  renderReportSessionDetail(S);
+  document.getElementById('rep-trend-card').style.display = S.type === 'session' ? 'none' : '';
+  renderReportTrend(S);
+  renderReportSessions(S);
+  renderReportInsights(S, r, provRows, areaRows, paid, pend);
+}
+
+function renderReportSessionDetail(S) {
+  const s = S.type === 'session' ? S.sessions[0] : null;
+  if (!s) { setHtml('rep-session-detail', ''); return; }
+  const r = rateOf(S.regs);
+  const row = (k, v) => `<div><div class="mf-lbl">${k}</div><div style="font-size:13px;font-weight:600;">${v}</div></div>`;
+  const parts = [...S.regs].sort((a, b) => (b.attendance_pct ?? -1) - (a.attendance_pct ?? -1));
+  setHtml('rep-session-detail', `<div class="card cp" style="margin-bottom:16px;">
+    <div class="ch" style="margin-bottom:12px;"><div><div class="ct">🗓 ${esc(s.title)}</div><div class="rep-sub" style="margin:3px 0 0;">${sessionStatusBadge(s)} ${areaBadge(s.area)}</div></div><button class="btn btn-ghost btn-sm" onclick="openSessionEditor('${esc(s.session_id)}')">✏ Edit session</button></div>
+    <div class="rep-detail-grid">
+      ${row('📅 Date', fmtDateLong(s.start))}${row('🕒 Time', `${fmtTime(s.start)} – ${fmtTime(s.end)} · ${esc(s.duration)} min`)}${row('👤 Speaker', esc(s.speaker || '—'))}${row('🏅 Accreditation', esc(s.accreditation || '—'))}
+      ${row('🎟 Fill rate', Number(s.capacity) ? `${fmtInt(s.registered)} of ${fmtInt(s.capacity)} seats (${Math.round(100 * Number(s.registered) / Number(s.capacity))}%)` : fmtInt(s.registered))}
+      ${row('✅ Attended ≥80%', r.done ? `${fmtInt(r.att)} of ${fmtInt(r.done)} (${r.rate}%)` : 'Not synced yet')}
+      ${row('💳 Fee · Revenue', `${Number(s.fee) > 0 ? fmtMoney(s.fee) : 'Free'} · ${fmtMoney(S.pays.filter(p => p.status === 'PAID').reduce((a, p) => a + Number(p.amount || 0), 0))}`)}
+      ${row('📜 Certificates', `${fmtInt(S.regs.filter(x => x.certificate_id).length)} generated`)}
+    </div>
+    <div class="ct" style="margin:18px 0 8px;">👥 Participants${S.prov ? ` · ${esc(S.prov)}` : ''}</div>
+    <div style="overflow-x:auto;"><table class="dt"><thead><tr><th>Member</th><th>Province</th><th>Payment</th><th>Attendance</th><th>Status</th><th>Certificate</th></tr></thead><tbody>
+    ${parts.length ? parts.map(x => `<tr><td class="nc">${esc(x.member || x.email || '—')}</td><td>${esc(S.provOf.get(x.user_id) || '—')}</td><td>${esc((REG_PAY_LABEL[x.payment_status] || ['', x.payment_status || '—'])[1])}</td><td>${x.attendance_pct == null ? '—' : Math.round(x.attendance_pct) + '%'}</td><td>${{ ATTENDED: '<span class="badge bg-g">Attended</span>', INCOMPLETE: '<span class="badge bg-y">Below 80%</span>', ABSENT: '<span class="badge bg-r">Absent</span>' }[x.attendance_status] || '<span class="badge bg-gr">Awaiting sync</span>'}</td><td>${x.certificate_id ? (x.cert_status === 'ISSUED' ? '✓ Issued' : x.cert_status === 'FAILED' ? '✗ Failed' : '⏳ Pending') : '—'}</td></tr>`).join('')
+      : emptyRow(6, new Date(s.start) > Date.now() ? 'Participants appear here once the session starts.' : 'No registrations for this session.')}
+    </tbody></table></div></div>`);
+}
+
+function renderReportTrend(S) {
+  if (S.type === 'session') return;
+  // months to show
+  let months = [];
+  const add = (y, m) => months.push(`${y}-${String(m).padStart(2, '0')}`);
+  const nowKey = monthKey(new Date().toISOString());
+  if (S.type === 'year') {
+    const y = Number(document.getElementById('rep-year').value);
+    for (let m = 1; m <= 12; m++) { const k = `${y}-${String(m).padStart(2, '0')}`; if (k <= nowKey || S.sessions.some(s => monthKey(s.start) === k)) add(y, m); }
+  } else {
+    const keys = S.sessions.map(s => monthKey(s.start));
+    if (S.type === 'range' && S.from && S.to) keys.push(monthKey(S.from.toISOString()), monthKey(S.to.toISOString()));
+    if (keys.length) {
+      keys.sort(); let [y, m] = keys[0].split('-').map(Number); const last = keys[keys.length - 1];
+      while (`${y}-${String(m).padStart(2, '0')}` <= last) { add(y, m); m++; if (m > 12) { m = 1; y++; } }
+    }
+    S.trendCut = S.type === 'general' && months.length > 24;
+    if (S.trendCut) months = months.slice(-24);
+  }
+  const rows = months.map(k => {
+    const ss = S.sessions.filter(s => monthKey(s.start) === k), ids = new Set(ss.map(s => s.session_id));
+    const rg = S.regs.filter(x => ids.has(x.session_id)), q = rateOf(rg);
+    return { k, label: new Date(`${k}-15T00:00:00+08:00`).toLocaleDateString('en-PH', { month: 'short', year: '2-digit', timeZone: TZ }),
+      long: new Date(`${k}-15T00:00:00+08:00`).toLocaleDateString('en-PH', { month: 'long', year: 'numeric', timeZone: TZ }),
+      sessions: ss.length, registered: S.prov ? rg.length : ss.reduce((a, s) => a + Number(s.registered || 0), 0), attended: q.att, rate: q.rate,
+      certs: rg.filter(x => x.certificate_id && x.cert_status === 'ISSUED').length,
+      revenue: S.pays.filter(p => p.status === 'PAID' && ids.has(p.session_id)).reduce((a, p) => a + Number(p.amount || 0), 0) };
+  });
+  S.trend = rows;
+  setText('rep-trend-note', S.trendCut ? 'Members who attended ≥80%, per month · showing the last 24 months (use “By year” for older data)' : 'Members who attended ≥80%, per month');
+  if (!rows.length || !rows.some(x => x.sessions)) {
+    setHtml('rep-trend-chart', emptyState('📈', 'No sessions in this period.'));
+  } else {
+    const max = Math.max(1, ...rows.map(x => x.attended));
+    const peak = rows.reduce((a, x) => x.attended > a.attended ? x : a, rows[0]);
+    setHtml('rep-trend-chart', `<div class="rep-bars">${rows.map(x => `<div class="rep-bcol" data-tip="${esc(`${x.long}\n${x.sessions} session(s) · ${x.registered} registered\n${x.attended} attended ≥80%${x.rate == null ? '' : ` (${x.rate}%)`}\n${x.certs} certificates · ${fmtMoney(x.revenue)}`)}"><div class="bv">${x === peak && x.attended ? x.attended : ''}</div><div class="bar" style="height:${Math.round(100 * x.attended / max)}%;"></div></div>`).join('')}</div>
+      <div class="rep-blabels">${rows.map(x => `<div>${esc(x.label)}</div>`).join('')}</div>`);
+  }
+  setHtml('a-an-monthly', rows.length ? rows.map(x => `<tr><td>${esc(x.long)}${x.k === nowKey ? ' (MTD)' : ''}</td><td>${fmtInt(x.sessions)}</td><td>${fmtInt(x.registered)}</td><td>${fmtInt(x.attended)}</td><td>${fmtInt(x.certs)}</td><td>${fmtMoney(x.revenue)}</td><td>${x.rate == null ? '—' : `<span class="badge ${x.rate >= 80 ? 'bg-g' : x.rate >= 70 ? 'bg-y' : 'bg-r'}">${x.rate}%</span>`}</td></tr>`).join('') : emptyRow(7, 'No data for this period.'));
+}
+function setTrendView(v) {
+  trendView = v;
+  document.getElementById('rep-trend-chart').style.display = v === 'chart' ? '' : 'none';
+  document.getElementById('rep-trend-table').style.display = v === 'table' ? '' : 'none';
+  document.getElementById('rep-trend-chart-btn').classList.toggle('active', v === 'chart');
+  document.getElementById('rep-trend-table-btn').classList.toggle('active', v === 'table');
+}
+
+function reportSessionRows(S) {
+  return [...S.sessions].sort((a, b) => new Date(b.start) - new Date(a.start)).map(s => {
+    const rg = S.regs.filter(x => x.session_id === s.session_id), q = rateOf(rg);
+    return { s, registered: S.prov ? rg.length : Number(s.registered || 0), attended: q.att, rate: q.rate,
+      certs: rg.filter(x => x.certificate_id && x.cert_status !== 'FAILED').length,
+      revenue: S.pays.filter(p => p.status === 'PAID' && p.session_id === s.session_id).reduce((a, p) => a + Number(p.amount || 0), 0) };
+  });
+}
+function renderReportSessions(S) {
+  const card = document.getElementById('rep-sessions-card');
+  if (S.type === 'session') { card.style.display = 'none'; return; }
+  card.style.display = '';
+  const rows = reportSessionRows(S);
+  setText('rep-sessions-title', `🗓 Sessions in this report (${rows.length})`);
+  setHtml('rep-sessions', rows.length ? rows.map(x => `<tr class="rep-click" onclick="openSessionReport('${esc(x.s.session_id)}')"><td class="nc">${esc(x.s.title)}</td><td>${fmtDate(x.s.start)} · ${fmtTime(x.s.start)}</td><td>${areaBadge(x.s.area)}</td><td>${fmtInt(x.registered)}${Number(x.s.capacity) && !S.prov ? `<span style="color:var(--t3);"> / ${fmtInt(x.s.capacity)}</span>` : ''}</td><td>${fmtInt(x.attended)}</td><td>${x.rate == null ? (new Date(x.s.start) > Date.now() ? '<span class="badge bg-b">Upcoming</span>' : '<span class="badge bg-y">Awaiting sync</span>') : `<span class="badge ${x.rate >= 80 ? 'bg-g' : x.rate >= 70 ? 'bg-y' : 'bg-r'}">${x.rate}%</span>`}</td><td>${fmtInt(x.certs)}</td><td>${fmtMoney(x.revenue)}</td></tr>`).join('')
+    : emptyRow(8, 'No sessions match these filters.'));
+}
+function openSessionReport(sessionId) {
+  document.getElementById('rep-type').value = 'session';
+  fillReportSelects();
+  document.getElementById('rep-session').value = sessionId;
+  onReportTypeChange();
+  document.getElementById('a-analytics-section').scrollIntoView({ behavior: 'smooth' });
+}
+
+function renderReportInsights(S, r, provRows, areaRows, paid, pend) {
+  setText('a-an-insight-title', `Insights · ${S.label.split(' · ').slice(0, 2).join(' · ')}`);
+  const tips = [];
+  const rated = a => a.filter(x => x.value != null);
+  if (!S.sessions.length) { setHtml('a-an-insights', 'No sessions match these filters. Try a wider date range or the general report.'); return; }
+  if (r.rate != null) tips.push(r.rate >= 80 ? `✅ Attendance is healthy at <strong>${r.rate}%</strong> (goal: 80%).` : `⚠ Attendance is <strong>${r.rate}%</strong>, below the 80% goal — ${fmtInt(r.done - r.att)} registrant(s) missed the threshold.`);
+  const pr = rated(provRows); if (pr.length > 1) tips.push(`📍 <strong>${esc(pr[0].label)}</strong> has the best attendance (${pr[0].value}%); <strong>${esc(pr[pr.length - 1].label)}</strong> is lowest (${pr[pr.length - 1].value}%) — consider targeted reminders there.`);
+  const ar = rated(areaRows); if (ar.length > 1) tips.push(`🎯 <strong>${esc(ar[0].label)}</strong> sessions draw the best attendance (${ar[0].value}%).`);
+  const low = S.sessions.filter(s => Number(s.capacity) && Number(s.registered) / Number(s.capacity) < 0.5 && new Date(s.start) > Date.now());
+  if (low.length) tips.push(`📣 ${low.length} upcoming session(s) are under half full (e.g. <strong>${esc(low[0].title)}</strong>) — promote them to members.`);
+  const unsynced = S.sessions.filter(s => new Date(s.end) < Date.now() && Number(s.registered) && !Number(s.log_count));
+  if (unsynced.length) tips.push(`🔄 ${unsynced.length} finished session(s) still need their Zoom attendance synced — certificates can't be generated until then.`);
+  const ready = S.regs.filter(x => x.attendance_status === 'ATTENDED' && !x.certificate_id).length;
+  if (ready) tips.push(`📜 ${ready} qualified member(s) are still waiting for their certificate.`);
+  if (pend) tips.push(`💳 ${fmtMoney(pend)} in payments is still pending.`);
+  if (S.trend && S.trend.filter(x => x.sessions).length > 1) { const best = S.trend.reduce((a, x) => x.attended > a.attended ? x : a, S.trend[0]); if (best.attended) tips.push(`📈 Busiest month: <strong>${esc(best.long)}</strong> with ${fmtInt(best.attended)} members attending.`); }
+  setHtml('a-an-insights', tips.length ? tips.join('<br>') : 'Not enough data yet. Insights appear once sessions have registrations and synced attendance.');
+}
+
+// ── Export / print the current report
+function exportAnalyticsReport() {
+  const S = reportScope(); renderAnalytics();
+  const r = rateOf(S.regs);
+  const rows = [['GameChanger — Analytics Report'], [S.label], [`Generated ${fmtDate(new Date().toISOString())} ${fmtTime(new Date().toISOString())}`], [],
+    ['Summary'], ['Sessions', S.sessions.length], ['Registrations', S.prov ? S.regs.length : S.sessions.reduce((a, s) => a + Number(s.registered || 0), 0)],
+    ['Attendance rate', r.rate == null ? '' : r.rate + '%'], ['Attended ≥80%', r.att],
+    ['Certificates', S.regs.filter(x => x.certificate_id && x.cert_status !== 'FAILED').length],
+    ['Revenue collected', S.pays.filter(p => p.status === 'PAID').reduce((a, p) => a + Number(p.amount || 0), 0)], [],
+    ['Session', 'Date', 'Time', 'Area', 'Registered', 'Attended', 'Attendance %', 'Certificates', 'Revenue'],
+    ...reportSessionRows(S).map(x => [x.s.title, fmtDate(x.s.start), fmtTime(x.s.start), x.s.area, x.registered, x.attended, x.rate ?? '', x.certs, x.revenue])];
+  if (S.type === 'session') rows.push([], ['Participant', 'Province', 'Payment', 'Attendance %', 'Status', 'Certificate'],
+    ...S.regs.map(x => [x.member || x.email, S.provOf.get(x.user_id) || '', x.payment_status, x.attendance_pct ?? '', x.attendance_status, x.cert_status || '']));
+  const cell = v => { const s = String(v ?? ''); return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s; };
+  const csv = '﻿' + rows.map(r => r.map(cell).join(',')).join('\r\n');
+  const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));
+  const a = Object.assign(document.createElement('a'), { href: url, download: `analytics-report-${new Date().toISOString().slice(0, 10)}.csv` });
+  document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(url), 1000);
+  logAdminAction('Exported analytics report', S.label);
+  showToast('Report exported.', 'success');
+}
+function printAnalyticsReport() {
+  const S = reportScope(); renderAnalytics();
+  const r = rateOf(S.regs);
+  const w = window.open('', '_blank');
+  if (!w) { showToast('Allow pop-ups for this site to print the report.', 'error', 5000); return; }
+  const kpis = document.getElementById('rep-kpis').innerText.split('\n').filter(Boolean);
+  const kRows = []; for (let i = 0; i + 2 < kpis.length + 1; i += 3) kRows.push(kpis.slice(i, i + 3));
+  w.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>Analytics Report</title><style>
+    body{font-family:Arial,sans-serif;color:#0F172A;margin:28px;} h1{font-size:20px;margin:0;} .sub{color:#475569;font-size:12px;margin:4px 0 18px;}
+    .k{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:18px;} .k div{border:1px solid #E2E8F0;border-radius:8px;padding:8px 10px;font-size:11px;color:#475569;} .k b{display:block;font-size:17px;color:#0F172A;margin:2px 0;}
+    table{width:100%;border-collapse:collapse;font-size:11px;margin-bottom:16px;} th,td{border-bottom:1px solid #E2E8F0;padding:6px;text-align:left;} th{background:#F4F6FB;}
+    h2{font-size:13px;margin:16px 0 6px;} .ins{font-size:12px;line-height:1.7;color:#334155;}</style></head><body>
+    <h1>GameChanger — Analytics Report</h1><div class="sub">${esc(S.label)}<br>Generated ${fmtDate(new Date().toISOString())} ${fmtTime(new Date().toISOString())}</div>
+    <div class="k">${kRows.map(x => `<div>${esc(x[0] || '')}<b>${esc(x[1] || '')}</b>${esc(x[2] || '')}</div>`).join('')}</div>
+    <h2>Insights</h2><div class="ins">${document.getElementById('a-an-insights').innerHTML}</div>
+    <h2>Sessions</h2><table><tr><th>Session</th><th>Date &amp; time</th><th>Area</th><th>Registered</th><th>Attended</th><th>Attendance</th><th>Certs</th><th>Revenue</th></tr>
+    ${reportSessionRows(S).map(x => `<tr><td>${esc(x.s.title)}</td><td>${fmtDate(x.s.start)} ${fmtTime(x.s.start)}</td><td>${esc(x.s.area)}</td><td>${x.registered}</td><td>${x.attended}</td><td>${x.rate == null ? '—' : x.rate + '%'}</td><td>${x.certs}</td><td>${fmtMoney(x.revenue)}</td></tr>`).join('') || '<tr><td colspan="8">No sessions.</td></tr>'}</table>
+    ${S.type === 'session' ? `<h2>Participants</h2><table><tr><th>Member</th><th>Province</th><th>Attendance</th><th>Status</th><th>Certificate</th></tr>${S.regs.map(x => `<tr><td>${esc(x.member || x.email || '')}</td><td>${esc(S.provOf.get(x.user_id) || '—')}</td><td>${x.attendance_pct == null ? '—' : Math.round(x.attendance_pct) + '%'}</td><td>${esc(x.attendance_status)}</td><td>${esc(x.cert_status || '—')}</td></tr>`).join('') || '<tr><td colspan="5">No participants.</td></tr>'}</table>` : ''}
+    <script>window.onload=()=>{window.print();}<\/script></body></html>`);
+  w.document.close();
+  logAdminAction('Printed analytics report', S.label);
+}
+
+// ── Chart tooltips: any element with data-tip shows it on hover
+document.addEventListener('mouseover', e => {
+  const t = e.target.closest?.('[data-tip]'), tip = document.getElementById('chart-tip');
+  if (!tip) return;
+  if (!t) { tip.classList.remove('show'); return; }
+  tip.innerHTML = esc(t.getAttribute('data-tip')).replace(/\n/g, '<br>');
+  tip.classList.add('show');
+});
+document.addEventListener('mousemove', e => {
+  const tip = document.getElementById('chart-tip');
+  if (!tip || !tip.classList.contains('show')) return;
+  const x = Math.min(e.clientX + 14, window.innerWidth - tip.offsetWidth - 8), y = Math.min(e.clientY + 14, window.innerHeight - tip.offsetHeight - 8);
+  tip.style.left = x + 'px'; tip.style.top = y + 'px';
+});
+
+// ════════════════════════════════════════════════
+// EDIT MEMBER — admins & super admins may change ONLY:
+//   area of expertise · mastery level · account status
+// (admin_update_member_fields() in 10_member_edit.sql)
+// ════════════════════════════════════════════════
+let editMemberId = null;
+function openEditMember(userId) {
+  const m = membersSource().find(x => x.user_id === userId); if (!m) return;
+  if (m.archived) { showToast('Restore this account before editing it.', 'info'); return; }
+  editMemberId = userId;
+  setText('aem-title', `✏ Edit ${m.full_name || m.email}`);
+  setText('aem-sub', `${m.member_id || ''}${m.role && m.role !== 'member' ? ' · ' + (m.role === 'super_admin' ? 'Super Admin' : 'Admin') : ''}`);
+  const info = [['Email', m.email], ['Phone', m.phone], ['Province', m.province], ['Company', m.company], ['Department', m.department], ['Position', m.position]];
+  setHtml('aem-info', info.map(([k, v]) => `<div><div class="k">${k}</div><div class="v" title="${esc(v || '')}">${esc(v || '—')}</div></div>`).join(''));
+  const sel = document.getElementById('aem-expertise');
+  sel.innerHTML = '<option value="">— Not set —</option>' + (ad().areas || []).map(a => `<option value="${esc(a)}">${esc(a)}</option>`).join('');
+  sel.value = m.expertise && (ad().areas || []).includes(m.expertise) ? m.expertise : '';
+  document.getElementById('aem-level').value = m.level || 'Entry';
+  document.getElementById('aem-status').value = ['Active', 'Inactive', 'Suspended'].includes(m.status) ? m.status : 'Active';
+  document.getElementById('aem-err').style.display = 'none';
+  openMo('a-edit-member');
+}
+async function saveEditMember() {
+  const m = membersSource().find(x => x.user_id === editMemberId); if (!m) return;
+  const exp = document.getElementById('aem-expertise').value, lvl = document.getElementById('aem-level').value, st = document.getElementById('aem-status').value;
+  const btn = document.getElementById('aem-save'); btn.disabled = true; btn.textContent = 'Saving...';
+  try {
+    await rpc('admin_update_member_fields', { p_user: editMemberId, p_expertise: exp || null, p_level: lvl, p_status: st });
+    closeMo('a-edit-member');
+    showToast(`${m.full_name || m.email} was updated.`, 'success');
+    await loadAdminData();
+  } catch (e) {
+    const err = document.getElementById('aem-err'); err.textContent = friendlyAuthError(e); err.style.display = 'block';
+  } finally { btn.disabled = false; btn.textContent = 'Save Changes'; }
+}
 
 // ════════════════════════════════════════════════
 // EXPORT — builds a CSV file from the data on screen

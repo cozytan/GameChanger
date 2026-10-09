@@ -187,6 +187,7 @@
       <div class="nav-sec">Menu</div>
       <a class="nav-item active" onclick="mShowPage('home')" id="mn-home"><svg class="ni" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"/></svg>Dashboard</a>
       <a class="nav-item" onclick="mShowPage('attendance')" id="mn-attendance"><svg class="ni" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>Session and Attendance</a>
+      <a class="nav-item" onclick="mShowPage('career')" id="mn-career"><svg class="ni" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7"/></svg>Career Path</a>
       <a class="nav-item" onclick="mShowPage('payments')" id="mn-payments"><svg class="ni" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z"/></svg>Payment<span class="nb" id="m-nb-pay" style="background:var(--yellow);color:#7A4A00;display:none;"></span></a>
       <a class="nav-item" onclick="mShowPage('certificates')" id="mn-certificates"><svg class="ni" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4M7.835 4.697a3.42 3.42 0 001.946-.806 3.42 3.42 0 014.438 0 3.42 3.42 0 001.946.806 3.42 3.42 0 013.138 3.138 3.42 3.42 0 00.806 1.946 3.42 3.42 0 010 4.438 3.42 3.42 0 00-.806 1.946 3.42 3.42 0 01-3.138 3.138 3.42 3.42 0 00-1.946.806 3.42 3.42 0 01-4.438 0 3.42 3.42 0 00-1.946-.806 3.42 3.42 0 01-3.138-3.138 3.42 3.42 0 00-.806-1.946 3.42 3.42 0 010-4.438 3.42 3.42 0 00.806-1.946 3.42 3.42 0 013.138-3.138z"/></svg>Certificate</a>
     </div>
@@ -262,7 +263,7 @@
       </div>
     </div>
 
-    <!-- SESSION AND ATTENDANCE (sessions, attendance history, then Career Path below) -->
+    <!-- SESSION AND ATTENDANCE -->
     <div id="mp-attendance" class="page">
       <div id="ma-sessions">
         <div class="fbar">
@@ -281,21 +282,22 @@
         <div class="ch"><div style="font-family:var(--font-h);font-size:14px;font-weight:700;">📋 Attendance History</div><button class="btn btn-ghost btn-sm" onclick="handleExport('all attendance records')">⬇ Export All</button></div>
         <div style="display:flex;flex-direction:column;gap:8px;margin-top:14px;" id="m-history"></div>
       </div>
-      <div id="ma-career" style="margin-top:28px;padding-top:22px;border-top:1px solid var(--border);scroll-margin-top:80px;">
-        <div style="font-family:var(--font-h);font-size:15px;font-weight:700;margin-bottom:14px;">🗺 Career Path</div>
-        <div class="m-ch">
-          <div class="m-mb"><div style="font-size:30px;">🏅</div><div class="m-mlv" id="m-car-level">—</div><div class="m-mst" id="m-car-position">HR Practitioner</div><div style="height:1px;background:var(--border);margin:11px 0;"></div><div style="font-size:11px;color:var(--t3);" id="m-car-rank">—</div><button class="btn btn-outline btn-sm" style="margin-top:11px;font-size:11px;" onclick="mShowPage('profile')">View Profile</button></div>
-          <div style="flex:1;">
-            <div style="font-family:var(--font-h);font-size:14px;font-weight:700;margin-bottom:11px;">🗺 HR Mastery Skill Tree</div>
-            <div class="m-tf" id="m-tree-filters"></div>
-            <div class="m-leg">
-              <div class="m-li"><div class="m-ld ld-done"></div>Completed</div>
-              <div class="m-li"><div class="m-ld ld-act"></div>In Progress</div>
-              <div class="m-li"><div class="m-ld ld-lock"></div>Locked (≥80%)</div>
-            </div>
-            <div class="card" style="padding:18px;overflow:hidden;">
-              <div id="m-skill-tree"></div>
-            </div>
+    </div>
+
+    <!-- CAREER PATH -->
+    <div id="mp-career" class="page">
+      <div class="m-ch">
+        <div class="m-mb"><div style="font-size:30px;">🏅</div><div class="m-mlv" id="m-car-level">—</div><div class="m-mst" id="m-car-position">HR Practitioner</div><div style="height:1px;background:var(--border);margin:11px 0;"></div><div style="font-size:11px;color:var(--t3);" id="m-car-rank">—</div><button class="btn btn-outline btn-sm" style="margin-top:11px;font-size:11px;" onclick="mShowPage('profile')">View Profile</button></div>
+        <div style="flex:1;">
+          <div style="font-family:var(--font-h);font-size:14px;font-weight:700;margin-bottom:11px;">🗺 HR Mastery Skill Tree</div>
+          <div class="m-tf" id="m-tree-filters"></div>
+          <div class="m-leg">
+            <div class="m-li"><div class="m-ld ld-done"></div>Completed</div>
+            <div class="m-li"><div class="m-ld ld-act"></div>In Progress</div>
+            <div class="m-li"><div class="m-ld ld-lock"></div>Locked (≥80%)</div>
+          </div>
+          <div class="card" style="padding:18px;overflow:hidden;">
+            <div id="m-skill-tree"></div>
           </div>
         </div>
       </div>
@@ -491,6 +493,61 @@
         <div class="card cp" style="cursor:pointer;position:relative;" onclick="aShowPage('payments')"><div style="position:absolute;right:14px;top:14px;width:34px;height:34px;border-radius:10px;background:var(--yellow-l);display:flex;align-items:center;justify-content:center;font-size:17px;">💳</div><div style="font-family:var(--font-h);font-size:22px;font-weight:800;color:var(--orange);" id="a-ov-revenue">—</div><div style="font-size:12px;color:var(--t2);margin-top:4px;">Payments Collected</div><div style="font-size:11px;font-weight:600;margin-top:7px;" id="a-ov-revenue-delta"></div></div>
         <div class="card cp" style="cursor:pointer;position:relative;" onclick="aShowPage('analytics')"><div style="position:absolute;right:14px;top:14px;width:34px;height:34px;border-radius:10px;background:var(--red-l);display:flex;align-items:center;justify-content:center;font-size:17px;">📊</div><div style="font-family:var(--font-h);font-size:26px;font-weight:800;color:var(--red);" id="a-ov-att">—</div><div style="font-size:12px;color:var(--t2);margin-top:4px;">Avg. Attendance</div><div style="font-size:11px;font-weight:600;margin-top:7px;" id="a-ov-att-delta"></div></div>
       </div>
+      <!-- ANALYTICS REPORT (filterable) -->
+      <div id="a-analytics-section" class="card cp" style="margin-bottom:16px;scroll-margin-top:80px;">
+        <div class="rep-head">
+          <div><div class="rep-title">📊 Analytics Report</div><div class="rep-scope" id="rep-scope">General report · All time</div></div>
+          <div class="rep-actions">
+            <button class="btn btn-ghost btn-sm" onclick="exportAnalyticsReport()">⬇ Export CSV</button>
+            <button class="btn btn-ghost btn-sm" onclick="printAnalyticsReport()">🖨 Print / Save PDF</button>
+          </div>
+        </div>
+        <div class="rep-filters">
+          <div class="rep-f"><div class="fl2">Report</div>
+            <select class="fs2" id="rep-type" onchange="onReportTypeChange()">
+              <option value="general">General report (all time)</option>
+              <option value="year">By year</option>
+              <option value="range">By date &amp; time</option>
+              <option value="session">Specific session</option>
+            </select></div>
+          <div class="rep-f" data-for="year"><div class="fl2">Year</div><select class="fs2" id="rep-year" onchange="renderAnalytics()"></select></div>
+          <div class="rep-f" data-for="range"><div class="fl2">From</div><input class="fi2" type="datetime-local" id="rep-from" onchange="renderAnalytics()"></div>
+          <div class="rep-f" data-for="range"><div class="fl2">To</div><input class="fi2" type="datetime-local" id="rep-to" onchange="renderAnalytics()"></div>
+          <div class="rep-f rep-f-wide" data-for="session"><div class="fl2">Session</div><select class="fs2" id="rep-session" onchange="renderAnalytics()"></select></div>
+          <div class="rep-f" data-for="general year range"><div class="fl2">Area</div><select class="fs2" id="rep-area" onchange="renderAnalytics()"><option value="">All areas</option></select></div>
+          <div class="rep-f"><div class="fl2">Province</div><select class="fs2" id="rep-province" onchange="renderAnalytics()"><option value="">All provinces</option></select></div>
+          <div class="rep-f"><button class="btn btn-ghost btn-sm" onclick="resetReportFilters()">↺ Reset</button></div>
+        </div>
+        <div class="rep-presets" data-for="range">
+          <span>Quick range:</span>
+          <button class="fchip" onclick="setReportRange('today')">Today</button>
+          <button class="fchip" onclick="setReportRange('7d')">Last 7 days</button>
+          <button class="fchip" onclick="setReportRange('30d')">Last 30 days</button>
+          <button class="fchip" onclick="setReportRange('month')">This month</button>
+          <button class="fchip" onclick="setReportRange('lastmonth')">Last month</button>
+          <button class="fchip" onclick="setReportRange('quarter')">This quarter</button>
+        </div>
+        <div class="rep-kpis" id="rep-kpis"></div>
+      </div>
+      <div id="rep-session-detail"></div>
+      <div class="g3" style="margin-bottom:16px;">
+        <div class="card cp"><div class="ct" style="margin-bottom:4px;">📍 Attendance by Province</div><div class="rep-sub">Share of registrants who attended ≥80%</div><div class="cb" id="a-an-province"></div></div>
+        <div class="card cp"><div class="ct" style="margin-bottom:4px;">🎯 Attendance by Area of Expertise</div><div class="rep-sub">Share of registrants who attended ≥80%</div><div class="cb" id="a-an-area"></div></div>
+        <div class="card cp"><div class="ct" style="margin-bottom:4px;">📜 Certificate Status</div><div class="rep-sub">Registrations in this report</div><div id="a-an-certs"></div></div>
+      </div>
+      <div class="card cp" style="margin-bottom:16px;border-left:4px solid var(--yellow);">
+        <div style="display:flex;align-items:flex-start;gap:11px;"><div style="font-size:22px;">💡</div><div style="flex:1;"><div style="font-family:var(--font-h);font-size:14px;font-weight:700;margin-bottom:5px;" id="a-an-insight-title">Insights</div><div style="font-size:13px;color:var(--t2);line-height:1.7;" id="a-an-insights"></div></div></div>
+      </div>
+      <div class="card cp" style="margin-bottom:16px;" id="rep-trend-card">
+        <div class="ch"><div><div class="ct">📈 Monthly Trend</div><div class="rep-sub" style="margin:2px 0 0;" id="rep-trend-note">Members who attended ≥80%, per month</div></div>
+          <div class="pill-tabs rep-toggle"><button class="pt active" id="rep-trend-chart-btn" onclick="setTrendView('chart')">Chart</button><button class="pt" id="rep-trend-table-btn" onclick="setTrendView('table')">Table</button></div></div>
+        <div id="rep-trend-chart"></div>
+        <div id="rep-trend-table" style="display:none;"><table class="dt"><thead><tr><th>Month</th><th>Sessions</th><th>Registered</th><th>Attended</th><th>Certs Issued</th><th>Revenue</th><th>Attendance</th></tr></thead><tbody id="a-an-monthly"></tbody></table></div>
+      </div>
+      <div class="card" style="margin-bottom:20px;" id="rep-sessions-card">
+        <div class="ch cp" style="padding-bottom:0;"><div><div class="ct" id="rep-sessions-title">🗓 Sessions in this report</div><div class="rep-sub" style="margin:2px 0 0;">Click a session to open its own report</div></div></div>
+        <div style="overflow-x:auto;"><table class="dt"><thead><tr><th>Session</th><th>Date &amp; Time</th><th>Area</th><th>Registered</th><th>Attended</th><th>Attendance</th><th>Certs</th><th>Revenue</th></tr></thead><tbody id="rep-sessions"></tbody></table></div>
+      </div>
       <div style="display:grid;grid-template-columns:1.4fr 1fr;gap:14px;">
         <div class="card cp">
           <div class="ch"><div class="ct">Recent Sessions</div><button class="btn btn-sm btn-red" onclick="openSessionEditor()">+ New Session</button></div>
@@ -511,19 +568,6 @@
             <div style="display:flex;flex-direction:column;gap:7px;" id="a-home-payments"></div>
           </div>
         </div>
-      </div>
-      <div id="a-analytics-section" style="display:flex;align-items:center;justify-content:space-between;margin:24px 0 14px;scroll-margin-top:80px;"><div style="font-family:var(--font-h);font-size:15px;font-weight:700;">📊 Analytic Dashboard</div></div>
-      <div class="g3" style="margin-bottom:20px;">
-        <div class="card cp"><div class="ct" style="margin-bottom:13px;">📍 Attendance by Province</div><div class="cb" id="a-an-province"></div></div>
-        <div class="card cp"><div class="ct" style="margin-bottom:13px;">🎯 Top Areas of Expertise</div><div class="cb" id="a-an-area"></div></div>
-        <div class="card cp"><div class="ct" style="margin-bottom:13px;">📜 Certificate Distribution</div><div id="a-an-certs"></div></div>
-      </div>
-      <div class="card cp" style="margin-bottom:14px;border-left:4px solid var(--yellow);">
-        <div style="display:flex;align-items:flex-start;gap:11px;"><div style="font-size:22px;">🤖</div><div><div style="font-family:var(--font-h);font-size:14px;font-weight:700;margin-bottom:5px;" id="a-an-insight-title">Insights</div><div style="font-size:13px;color:var(--t2);line-height:1.7;" id="a-an-insights"></div></div></div>
-      </div>
-      <div class="card cp">
-        <div class="ch"><div class="ct">📈 Monthly Certification Trends</div><button class="btn btn-sm btn-ghost" onclick="handleExport('monthly report')">⬇ Export</button></div>
-        <table class="dt"><thead><tr><th>Month</th><th>Sessions</th><th>Attendees</th><th>Certs Issued</th><th>Revenue</th><th>Avg Attendance</th><th>Flag</th></tr></thead><tbody id="a-an-monthly"></tbody></table>
       </div>
     </div>
 
@@ -608,91 +652,6 @@
       <div class="card"><table class="dt"><thead><tr><th>Member</th><th>Session</th><th>Amount</th><th>Method</th><th>Date</th><th>Status</th><th>Actions</th></tr></thead><tbody id="a-payments-tbody"></tbody></table></div>
     </div>
 
-    <!-- ADMIN: ADD / EDIT MEMBER (full page) -->
-    <div id="ap-member-form" class="page">
-      <div style="display:flex;align-items:center;gap:12px;margin-bottom:18px;">
-        <button class="btn btn-ghost btn-sm" onclick="aShowPage('members')">← Back to Data Management</button>
-        <div>
-          <div style="font-family:var(--font-h);font-size:19px;font-weight:800;" id="mf-heading">Add Member</div>
-          <div style="font-size:12px;color:var(--t3);" id="mf-subheading">Create an account for a new member. They can sign in right away with the email and password you set.</div>
-        </div>
-      </div>
-      <div class="mf-layout">
-        <div style="display:flex;flex-direction:column;gap:14px;">
-
-          <div class="card cp">
-            <div class="mf-sec-title">👤 Account</div>
-            <div class="g2">
-              <div class="fg2" style="grid-column:1/-1;"><div class="fl2">Full Name *</div><input class="fi2" id="mf-name" placeholder="First and last name" maxlength="100" autocomplete="off" oninput="updateMemberPreview()"></div>
-              <div class="fg2"><div class="fl2">Email Address *</div><input class="fi2" id="mf-email" type="email" placeholder="name@email.com" maxlength="254" autocomplete="off" oninput="updateMemberPreview()"><div class="mf-hint" id="mf-email-hint">They sign in with this email.</div></div>
-              <div class="fg2"><div class="fl2">Phone *</div><input class="fi2" id="mf-phone" type="tel" inputmode="tel" maxlength="18" placeholder="+63 9XX XXX XXXX"><div class="mf-hint">PH mobile: +63 and 10 digits.</div></div>
-              <div class="fg2" id="mf-pass-wrap" style="grid-column:1/-1;">
-                <div class="fl2" id="mf-pass-label">Password *</div>
-                <div style="display:flex;gap:7px;">
-                  <input class="fi2" id="mf-pass" type="text" placeholder="8+ characters, letters and numbers" maxlength="72" autocomplete="new-password">
-                  <button class="btn btn-ghost btn-sm" type="button" onclick="generateMemberPassword()">🎲 Generate</button>
-                </div>
-                <div class="mf-hint" id="mf-pass-hint">Share this password with the member. They can change it anytime with "Forgot password?".</div>
-              </div>
-              <label class="mf-check" id="mf-confirm-wrap" style="grid-column:1/-1;"><input type="checkbox" id="mf-confirm" checked> Account can sign in immediately (email marked as confirmed)</label>
-            </div>
-          </div>
-
-          <div class="card cp" id="mf-access-card">
-            <div class="mf-sec-title">🛡 Account Type &amp; ID <span class="badge bg-r" style="margin-left:6px;">Super admin</span></div>
-            <div class="g2">
-              <div class="fg2"><div class="fl2">Account Type</div>
-                <select class="fs2" id="mf-role" onchange="onMemberRoleChange()">
-                  <option value="member">Member</option>
-                  <option value="admin">Admin</option>
-                  <option value="super_admin">Super Admin</option>
-                </select>
-                <div class="mf-hint" id="mf-role-hint">Members use the member portal.</div>
-              </div>
-              <div class="fg2"><div class="fl2">Member ID</div>
-                <input class="fi2" id="mf-mid" maxlength="13" placeholder="Leave blank to auto-generate" oninput="updateMemberPreview()">
-                <div class="mf-hint" id="mf-mid-hint">Blank = next HRC-YYYY-NNNN number.</div>
-              </div>
-            </div>
-          </div>
-
-          <div class="card cp">
-            <div class="mf-sec-title">🏢 Member Details</div>
-            <div class="g2">
-              <div class="fg2"><div class="fl2">Province *</div><select class="fs2" id="mf-province"><option value="">-- Select province --</option><option>Cavite</option><option>Laguna</option><option>Batangas</option><option>Rizal</option><option>Quezon</option></select></div>
-              <div class="fg2"><div class="fl2">Company *</div><input class="fi2" id="mf-company" maxlength="100" placeholder="e.g. MSME HR Solutions, Inc."></div>
-              <div class="fg2"><div class="fl2">Department *</div><input class="fi2" id="mf-department" maxlength="100" placeholder="e.g. Human Resources"></div>
-              <div class="fg2"><div class="fl2">Position *</div><input class="fi2" id="mf-position" maxlength="100" placeholder="e.g. HR Officer" oninput="updateMemberPreview()"></div>
-              <div class="fg2"><div class="fl2">Area of Expertise *</div><select class="fs2" id="mf-expertise" onchange="updateMemberPreview()"><option value="">— Not set —</option></select></div>
-              <div class="fg2 mf-super-only"><div class="fl2">Mastery Level</div><select class="fs2" id="mf-level" onchange="updateMemberPreview()"><option>Entry</option><option>Mid</option><option>Master</option></select></div>
-              <div class="fg2 mf-super-only"><div class="fl2">Account Status</div><select class="fs2" id="mf-status" onchange="updateMemberPreview()"><option>Active</option><option>Inactive</option><option>Suspended</option></select></div>
-            </div>
-          </div>
-
-          <div id="mf-err" style="display:none;background:var(--red-l);border-radius:var(--r2);padding:10px 13px;font-size:13px;color:var(--red-d);"></div>
-          <div id="mf-done" class="card cp" style="display:none;border-left:4px solid var(--green);"></div>
-          <div style="display:flex;gap:8px;justify-content:flex-end;" id="mf-actions">
-            <button class="btn btn-ghost" onclick="aShowPage('members')">Cancel</button>
-            <button class="btn btn-outline" id="mf-save-another" onclick="saveMemberForm(true)">Save &amp; Add Another</button>
-            <button class="btn btn-red" id="mf-save" onclick="saveMemberForm(false)">Save Member</button>
-          </div>
-        </div>
-
-        <!-- live preview -->
-        <div>
-          <div class="card cp" style="position:sticky;top:90px;text-align:center;">
-            <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--t3);margin-bottom:12px;">Preview</div>
-            <div id="mf-pv-av" style="width:64px;height:64px;border-radius:50%;background:linear-gradient(135deg,var(--red),var(--blue));display:flex;align-items:center;justify-content:center;margin:0 auto 10px;font-size:22px;font-weight:800;color:white;">?</div>
-            <div style="font-family:var(--font-h);font-size:16px;font-weight:700;" id="mf-pv-name">New member</div>
-            <div style="font-size:12px;color:var(--t3);margin-top:2px;" id="mf-pv-id">ID assigned on save</div>
-            <div style="margin-top:8px;display:flex;gap:5px;justify-content:center;flex-wrap:wrap;" id="mf-pv-badges"></div>
-            <div style="font-size:12px;color:var(--t2);margin-top:10px;" id="mf-pv-email"></div>
-            <div style="font-size:12px;color:var(--t2);margin-top:3px;" id="mf-pv-position"></div>
-          </div>
-        </div>
-      </div>
-    </div>
-
     <!-- ADMIN: MY PROFILE -->
     <div id="ap-profile" class="page">
       <div style="display:grid;grid-template-columns:270px 1fr;gap:18px;">
@@ -759,6 +718,20 @@
   <div class="modal"><div class="mh"><div class="mt">🏆 Certificate Template</div><button class="mc" onclick="closeMo('a-cert-detail')">✕</button></div>
   <div class="mb"><div id="a-cd-preview" style="height:185px;background:linear-gradient(135deg,#1565C0,#0D47A1);border-radius:var(--r3);display:flex;align-items:center;justify-content:center;flex-direction:column;color:white;margin-bottom:13px;"><div style="font-size:30px;margin-bottom:7px;">🏆</div><div style="font-size:10px;opacity:.6;text-transform:uppercase;letter-spacing:.1em;">Certificate of Completion</div><div style="font-family:var(--font-h);font-size:17px;font-weight:700;margin-top:5px;text-align:center;padding:0 12px;" id="a-cd-title">—</div><div style="font-size:12px;opacity:.75;margin-top:3px;" id="a-cd-sub">HR Calabarzon</div><div style="width:46px;height:46px;background:white;border-radius:7px;display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:700;color:#999;margin-top:9px;">QR</div></div><div style="display:flex;gap:9px;flex-wrap:wrap;font-size:12px;"><span><span style="color:var(--t3);">Issued:</span> <span id="a-cd-issued">—</span></span><span><span style="color:var(--t3);">Session:</span> <span id="a-cd-date">—</span></span><span><span style="color:var(--t3);">Accreditation:</span> <span id="a-cd-acc">—</span></span></div></div>
   <div class="mf"><button class="btn btn-ghost" onclick="handleDownloadAllZip()">⬇ Download All</button><button class="btn btn-red" onclick="handleBulkSend()">📧 Send to Members</button></div></div>
+</div>
+<div class="mo" id="a-edit-member">
+  <div class="modal"><div class="mh"><div><div class="mt" id="aem-title">✏ Edit Member</div><div style="font-size:12px;color:var(--t3);margin-top:2px;" id="aem-sub"></div></div><button class="mc" onclick="closeMo('a-edit-member')">✕</button></div>
+  <div class="mb">
+    <div class="aem-info" id="aem-info"></div>
+    <div style="font-size:11px;color:var(--t3);margin:8px 0 16px;line-height:1.5;">🔒 Personal details can only be changed by the member from their own profile.</div>
+    <div class="fg2"><div class="fl2">Area of Expertise</div><select class="fs2" id="aem-expertise"><option value="">— Not set —</option></select></div>
+    <div class="g2">
+      <div class="fg2"><div class="fl2">Mastery Level</div><select class="fs2" id="aem-level"><option>Entry</option><option>Mid</option><option>Master</option></select></div>
+      <div class="fg2"><div class="fl2">Account Status</div><select class="fs2" id="aem-status"><option>Active</option><option>Inactive</option><option>Suspended</option></select></div>
+    </div>
+    <div id="aem-err" style="display:none;background:var(--red-l);border-radius:var(--r2);padding:10px 13px;font-size:12px;color:var(--red-d);"></div>
+  </div>
+  <div class="mf"><button class="btn btn-ghost" onclick="closeMo('a-edit-member')">Cancel</button><button class="btn btn-red" id="aem-save" onclick="saveEditMember()">Save Changes</button></div></div>
 </div>
 <div class="mo" id="a-member-detail">
   <div class="modal"><div class="mh"><div class="mt" id="a-md-title">👤 Member</div><button class="mc" onclick="closeMo('a-member-detail')">✕</button></div>
@@ -844,6 +817,7 @@
 
 <!-- Sidebar quick view (shown when hovering a sidebar item) -->
 <div class="nav-peek" id="nav-peek" aria-hidden="true"></div>
+<div class="chart-tip" id="chart-tip" role="tooltip"></div>
 
 <!-- ════════════════════════════════════════════
      script.js contains every onclick handler
