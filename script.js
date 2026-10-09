@@ -1646,7 +1646,7 @@ function renderSessions() {
   setHtml('a-sess-upcoming', upcoming.length ? upcoming.map(s => {
     const live = sessionIsLive(s), soon = new Date(s.start) - Date.now() < 864e5;
     const cap = Number(s.capacity) ? Math.round(100 * Number(s.registered) / Number(s.capacity)) : 0;
-    return `<div class="card cp" style="border-left:4px solid ${live || soon ? 'var(--red)' : 'var(--blue)'};"><div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:9px;">${live ? '<span class="badge bg-r">🔴 Live now</span>' : soon ? '<span class="badge bg-r">🔴 Live Soon</span>' : '<span class="badge bg-b">📅 Upcoming</span>'}<div style="display:flex;gap:5px;"><button class="btn btn-xs btn-ghost" onclick="openSessionEditor('${esc(s.session_id)}')">✏ Edit</button><button class="btn btn-xs btn-danger" onclick="handleCancelSession('${esc(s.session_id)}')">Cancel</button></div></div>
+    return `<div class="card cp" style="border-left:4px solid ${live || soon ? 'var(--red)' : 'var(--blue)'};"><div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:9px;">${live ? '<span class="badge bg-r">🔴 Live now</span>' : soon ? '<span class="badge bg-r">🔴 Live Soon</span>' : '<span class="badge bg-b">📅 Upcoming</span>'}<div style="display:flex;gap:5px;"><button class="btn btn-xs btn-ghost" onclick="openSessionEditor('${esc(s.session_id)}')">✏️ Edit</button><button class="btn btn-xs btn-danger" onclick="handleCancelSession('${esc(s.session_id)}')">Cancel</button></div></div>
       <div style="font-family:var(--font-h);font-size:14px;font-weight:700;margin-bottom:7px;">${esc(s.title)}</div>
       <div style="font-size:12px;color:var(--t2);display:flex;flex-direction:column;gap:3px;"><div>📅 ${fmtDate(s.start)} · ${fmtTime(s.start)} · ${esc(s.duration)} min</div><div>👤 ${esc(s.speaker)} · ${esc(areaStyle(s.area).short)}</div>${s.zoom_join_url ? `<div>🔗 <span style="color:var(--blue);cursor:pointer;" onclick="copyZoomLink('${esc(s.session_id)}')">${esc(String(s.zoom_join_url).replace(/^https?:\/\//, ''))}</span></div>` : '<div style="color:#B45309;">🔗 No Zoom link yet</div>'}<div>💳 ${Number(s.fee) > 0 ? fmtMoney(s.fee) + ' admission fee' : 'Free session'}</div></div>
       <div style="display:flex;gap:14px;margin-top:11px;">${[['Registered', s.registered, 'var(--blue)'], ['Paid', s.paid, 'var(--green)'], ['Pending Pay', s.pending_pay, 'var(--yellow)'], ['Capacity', s.capacity, 'var(--red)']].map(([l, v, c]) => `<div style="text-align:center;"><div style="font-family:var(--font-h);font-size:18px;font-weight:800;color:${c};">${fmtInt(v)}</div><div style="font-size:11px;color:var(--t3);">${l}</div></div>`).join('')}</div>
@@ -1683,7 +1683,7 @@ function openSessionEditor(sessionId) {
   const s = sessionId ? (ad().sessions || []).find(x => x.session_id === sessionId) : null;
   editingSessionId = s ? s.session_id : null;
   const v = (id, val) => { const el = document.getElementById(id); if (el) el.value = val ?? ''; };
-  setText('acs-heading', s ? '✏ Edit Session' : '📅 Create New Session');
+  setText('acs-heading', s ? '✏️ Edit Session' : '📅 Create New Session');
   const parts = s ? manilaParts(s.start) : null;
   v('acs-title', s?.title); v('acs-speaker', s?.speaker === 'To be announced' ? '' : s?.speaker); v('acs-speaker-title', s?.speaker_title);
   v('acs-date', parts?.date); v('acs-time', parts?.time || '14:00'); v('acs-duration', s?.duration ?? 90);
@@ -2079,7 +2079,7 @@ function memberActions(m) {
     if (sup) acts.push({ key: 'restore', label: '♻ Restore', cls: 'good', call: `restoreMember('${id}')` });
     return acts;
   }
-  if (sup || m.role === 'member') acts.push({ key: 'edit', label: '✏ Edit', call: `openEditMember('${id}')` });
+  if (sup || m.role === 'member') acts.push({ key: 'edit', label: '✏️ Edit', call: `openEditMember('${id}')` });
   if (sup || m.role === 'member') acts.push({ key: 'archive', label: '🗄 Archive', cls: 'danger', call: `openArchiveMember('${id}')` });
   return acts;
 }
@@ -2162,7 +2162,7 @@ function renderAdminProfile() {
   [['fullname', me.full_name], ['email', me.email], ['phone', me.phone], ['province', me.province], ['company', me.company],
    ['department', me.department], ['position', me.position]].forEach(([k, v]) => setText('a-prof-' + k, v || '—'));
   setHtml('a-prof-perms', me.is_super
-    ? '✅ View all members and admins<br>✅ Edit area of expertise, mastery level and account status<br>✅ Archive and restore accounts<br>✅ Manage sessions, attendance, certificates and payments'
+    ? '✅ View all members and admins<br>✅ Edit area of expertise, mastery level and account status<br>✅ Change account type (Member / Admin / Super Admin)<br>✅ Archive and restore accounts<br>✅ Manage sessions, attendance, certificates and payments'
     : '✅ View members<br>✅ Edit a member\'s area of expertise, mastery level and account status<br>✅ Archive members<br>✅ Manage sessions, attendance, certificates and payments<br>🔒 Restoring archived accounts is for super admins. Personal details are changed by each member from their own profile.');
 }
 async function sendMyPasswordReset() {
@@ -2483,7 +2483,7 @@ function renderReportSessionDetail(S) {
   const row = (k, v) => `<div><div class="mf-lbl">${k}</div><div style="font-size:13px;font-weight:600;">${v}</div></div>`;
   const parts = [...S.regs].sort((a, b) => (b.attendance_pct ?? -1) - (a.attendance_pct ?? -1));
   setHtml('rep-session-detail', `<div class="card cp" style="margin-bottom:16px;">
-    <div class="ch" style="margin-bottom:12px;"><div><div class="ct">🗓 ${esc(s.title)}</div><div class="rep-sub" style="margin:3px 0 0;">${sessionStatusBadge(s)} ${areaBadge(s.area)}</div></div><button class="btn btn-ghost btn-sm" onclick="openSessionEditor('${esc(s.session_id)}')">✏ Edit session</button></div>
+    <div class="ch" style="margin-bottom:12px;"><div><div class="ct">🗓 ${esc(s.title)}</div><div class="rep-sub" style="margin:3px 0 0;">${sessionStatusBadge(s)} ${areaBadge(s.area)}</div></div><button class="btn btn-ghost btn-sm" onclick="openSessionEditor('${esc(s.session_id)}')">✏️ Edit session</button></div>
     <div class="rep-detail-grid">
       ${row('📅 Date', fmtDateLong(s.start))}${row('🕒 Time', `${fmtTime(s.start)} – ${fmtTime(s.end)} · ${esc(s.duration)} min`)}${row('👤 Speaker', esc(s.speaker || '—'))}${row('🏅 Accreditation', esc(s.accreditation || '—'))}
       ${row('🎟 Fill rate', Number(s.capacity) ? `${fmtInt(s.registered)} of ${fmtInt(s.capacity)} seats (${Math.round(100 * Number(s.registered) / Number(s.capacity))}%)` : fmtInt(s.registered))}
@@ -2659,7 +2659,7 @@ function openEditMember(userId) {
   const m = membersSource().find(x => x.user_id === userId); if (!m) return;
   if (m.archived) { showToast('Restore this account before editing it.', 'info'); return; }
   editMemberId = userId;
-  setText('aem-title', `✏ Edit ${m.full_name || m.email}`);
+  setText('aem-title', `✏️ Edit ${m.full_name || m.email}`);
   setText('aem-sub', `${m.member_id || ''}${m.role && m.role !== 'member' ? ' · ' + (m.role === 'super_admin' ? 'Super Admin' : 'Admin') : ''}`);
   const info = [['Email', m.email], ['Phone', m.phone], ['Province', m.province], ['Company', m.company], ['Department', m.department], ['Position', m.position]];
   setHtml('aem-info', info.map(([k, v]) => `<div><div class="k">${k}</div><div class="v" title="${esc(v || '')}">${esc(v || '—')}</div></div>`).join(''));
@@ -2668,17 +2668,39 @@ function openEditMember(userId) {
   sel.value = m.expertise && (ad().areas || []).includes(m.expertise) ? m.expertise : '';
   document.getElementById('aem-level').value = m.level || 'Entry';
   document.getElementById('aem-status').value = ['Active', 'Inactive', 'Suspended'].includes(m.status) ? m.status : 'Active';
+  // Account type: super admins only
+  document.getElementById('aem-role-wrap').style.display = isSuperAdmin() ? '' : 'none';
+  document.getElementById('aem-role').value = m.role || 'member';
+  onEditRoleChange();
   document.getElementById('aem-err').style.display = 'none';
   openMo('a-edit-member');
+}
+const ROLE_NAME = { member: 'Member', admin: 'Admin', super_admin: 'Super Admin' };
+function onEditRoleChange() {
+  const m = membersSource().find(x => x.user_id === editMemberId) || {};
+  const from = m.role || 'member', to = document.getElementById('aem-role')?.value || from;
+  let hint = { member: 'Uses the member portal.', admin: 'Manages sessions, attendance, certificates and payments; can view, edit and archive members.', super_admin: 'Full access, including changing account types and restoring archived accounts.' }[to];
+  if (to !== from) {
+    if (from === 'member') hint += ' They will get a new Admin ID (ADM-YYYY-NNNN) and sign in with it from now on.';
+    else if (to === 'member') hint += ' They will get a new member ID (HRC-YYYY-NNNN) and sign in with their email.';
+    else hint += ' Their Admin ID stays the same.';
+  }
+  setText('aem-role-hint', hint);
 }
 async function saveEditMember() {
   const m = membersSource().find(x => x.user_id === editMemberId); if (!m) return;
   const exp = document.getElementById('aem-expertise').value, lvl = document.getElementById('aem-level').value, st = document.getElementById('aem-status').value;
+  const role = isSuperAdmin() ? document.getElementById('aem-role').value : (m.role || 'member');
+  const roleChanged = role !== (m.role || 'member');
+  if (roleChanged && !confirm(`Change ${m.full_name || m.email} from ${ROLE_NAME[m.role || 'member']} to ${ROLE_NAME[role]}?`)) return;
   const btn = document.getElementById('aem-save'); btn.disabled = true; btn.textContent = 'Saving...';
   try {
+    let newId = null;
+    if (roleChanged) newId = await rpc('admin_set_account_type', { p_user: editMemberId, p_role: role });
     await rpc('admin_update_member_fields', { p_user: editMemberId, p_expertise: exp || null, p_level: lvl, p_status: st });
     closeMo('a-edit-member');
-    showToast(`${m.full_name || m.email} was updated.`, 'success');
+    if (roleChanged) showToast(`${m.full_name || m.email} is now ${role === 'admin' ? 'an' : 'a'} ${ROLE_NAME[role]}${newId ? ` — ID ${newId}` : ''}.${role !== 'member' && (m.role || 'member') === 'member' ? ' They sign in with that Admin ID.' : ''}`, 'success', 7000);
+    else showToast(`${m.full_name || m.email} was updated.`, 'success');
     await loadAdminData();
   } catch (e) {
     const err = document.getElementById('aem-err'); err.textContent = friendlyAuthError(e); err.style.display = 'block';

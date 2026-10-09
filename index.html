@@ -351,7 +351,7 @@
             <div style="text-align:center;"><div style="font-weight:700;font-size:15px;" id="m-prof-certs">—</div><div style="font-size:10px;color:var(--t3);">Certs</div></div>
             <div style="text-align:center;"><div style="font-weight:700;font-size:15px;" id="m-prof-rank">—</div><div style="font-size:10px;color:var(--t3);">Rank</div></div>
           </div>
-          <button class="btn btn-primary" style="width:100%;margin-top:14px;justify-content:center;" onclick="handleEditProfile()">✏ Edit Profile</button>
+          <button class="btn btn-primary" style="width:100%;margin-top:14px;justify-content:center;" onclick="handleEditProfile()">✏️ Edit Profile</button>
         </div>
         <div style="display:flex;flex-direction:column;gap:14px;">
           <div class="card cp">
@@ -398,7 +398,7 @@
   <div class="mf" id="msv-footer"></div></div>
 </div>
 <div class="mo" id="m-edit-profile">
-  <div class="modal"><div class="mh"><div class="mt">✏ Edit Profile</div><button class="mc" onclick="closeMo('m-edit-profile')">✕</button></div>
+  <div class="modal"><div class="mh"><div class="mt">✏️ Edit Profile</div><button class="mc" onclick="closeMo('m-edit-profile')">✕</button></div>
   <div class="mb"><div class="g2">
     <div class="fg2" style="grid-column:1/-1;"><div class="fl2">Full Name</div><input class="fi2" id="ep-name" maxlength="100"></div>
     <div class="fg2"><div class="fl2">Province</div><select class="fs2" id="ep-province"><option>Cavite</option><option>Laguna</option><option>Batangas</option><option>Rizal</option><option>Quezon</option></select></div>
@@ -493,6 +493,27 @@
         <div class="card cp" style="cursor:pointer;position:relative;" onclick="aShowPage('payments')"><div style="position:absolute;right:14px;top:14px;width:34px;height:34px;border-radius:10px;background:var(--yellow-l);display:flex;align-items:center;justify-content:center;font-size:17px;">💳</div><div style="font-family:var(--font-h);font-size:22px;font-weight:800;color:var(--orange);" id="a-ov-revenue">—</div><div style="font-size:12px;color:var(--t2);margin-top:4px;">Payments Collected</div><div style="font-size:11px;font-weight:600;margin-top:7px;" id="a-ov-revenue-delta"></div></div>
         <div class="card cp" style="cursor:pointer;position:relative;" onclick="aShowPage('analytics')"><div style="position:absolute;right:14px;top:14px;width:34px;height:34px;border-radius:10px;background:var(--red-l);display:flex;align-items:center;justify-content:center;font-size:17px;">📊</div><div style="font-family:var(--font-h);font-size:26px;font-weight:800;color:var(--red);" id="a-ov-att">—</div><div style="font-size:12px;color:var(--t2);margin-top:4px;">Avg. Attendance</div><div style="font-size:11px;font-weight:600;margin-top:7px;" id="a-ov-att-delta"></div></div>
       </div>
+      <div style="display:grid;grid-template-columns:1.4fr 1fr;gap:14px;margin-bottom:20px;">
+        <div class="card cp">
+          <div class="ch"><div class="ct">Recent Sessions</div><button class="btn btn-sm btn-red" onclick="openSessionEditor()">+ New Session</button></div>
+          <table class="dt"><thead><tr><th>Session</th><th>Date</th><th>Area</th><th>Attendees</th><th>Status</th></tr></thead><tbody id="a-home-sessions"></tbody></table>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:13px;">
+          <div class="card cp">
+            <div class="ct" style="margin-bottom:11px;">Quick Actions</div>
+            <div style="display:flex;flex-direction:column;gap:7px;">
+              <button class="btn btn-red" style="justify-content:flex-start;gap:10px;" onclick="openSessionEditor()">📅 Create New Session</button>
+              <button class="btn btn-ghost" style="justify-content:flex-start;gap:10px;" onclick="aOpenSync()">🔄 Sync Zoom Attendance</button>
+              <button class="btn btn-ghost" style="justify-content:flex-start;gap:10px;" onclick="aShowPage('members')">👥 Member Database</button>
+              <button class="btn btn-ghost" style="justify-content:flex-start;gap:10px;" onclick="aShowPage('analytics')">📊 View Analytics</button>
+            </div>
+          </div>
+          <div class="card cp">
+            <div class="ch" style="margin-bottom:9px;"><div class="ct">Recent Payments</div><span class="see-all" onclick="aShowPage('payments')">View all</span></div>
+            <div style="display:flex;flex-direction:column;gap:7px;" id="a-home-payments"></div>
+          </div>
+        </div>
+      </div>
       <!-- ANALYTICS REPORT (filterable) -->
       <div id="a-analytics-section" class="card cp" style="margin-bottom:16px;scroll-margin-top:80px;">
         <div class="rep-head">
@@ -547,27 +568,6 @@
       <div class="card" style="margin-bottom:20px;" id="rep-sessions-card">
         <div class="ch cp" style="padding-bottom:0;"><div><div class="ct" id="rep-sessions-title">🗓 Sessions in this report</div><div class="rep-sub" style="margin:2px 0 0;">Click a session to open its own report</div></div></div>
         <div style="overflow-x:auto;"><table class="dt"><thead><tr><th>Session</th><th>Date &amp; Time</th><th>Area</th><th>Registered</th><th>Attended</th><th>Attendance</th><th>Certs</th><th>Revenue</th></tr></thead><tbody id="rep-sessions"></tbody></table></div>
-      </div>
-      <div style="display:grid;grid-template-columns:1.4fr 1fr;gap:14px;">
-        <div class="card cp">
-          <div class="ch"><div class="ct">Recent Sessions</div><button class="btn btn-sm btn-red" onclick="openSessionEditor()">+ New Session</button></div>
-          <table class="dt"><thead><tr><th>Session</th><th>Date</th><th>Area</th><th>Attendees</th><th>Status</th></tr></thead><tbody id="a-home-sessions"></tbody></table>
-        </div>
-        <div style="display:flex;flex-direction:column;gap:13px;">
-          <div class="card cp">
-            <div class="ct" style="margin-bottom:11px;">Quick Actions</div>
-            <div style="display:flex;flex-direction:column;gap:7px;">
-              <button class="btn btn-red" style="justify-content:flex-start;gap:10px;" onclick="openSessionEditor()">📅 Create New Session</button>
-              <button class="btn btn-ghost" style="justify-content:flex-start;gap:10px;" onclick="aOpenSync()">🔄 Sync Zoom Attendance</button>
-              <button class="btn btn-ghost" style="justify-content:flex-start;gap:10px;" onclick="aShowPage('members')">👥 Member Database</button>
-              <button class="btn btn-ghost" style="justify-content:flex-start;gap:10px;" onclick="aShowPage('analytics')">📊 View Analytics</button>
-            </div>
-          </div>
-          <div class="card cp">
-            <div class="ch" style="margin-bottom:9px;"><div class="ct">Recent Payments</div><span class="see-all" onclick="aShowPage('payments')">View all</span></div>
-            <div style="display:flex;flex-direction:column;gap:7px;" id="a-home-payments"></div>
-          </div>
-        </div>
       </div>
     </div>
 
@@ -664,7 +664,7 @@
             <div>Admin since <strong style="color:var(--t2);" id="a-prof-since">—</strong></div>
             <div>Last sign-in <strong style="color:var(--t2);" id="a-prof-last">—</strong></div>
           </div>
-          <button class="btn btn-primary" style="width:100%;margin-top:14px;justify-content:center;" onclick="handleEditProfile()">✏ Edit Profile</button>
+          <button class="btn btn-primary" style="width:100%;margin-top:14px;justify-content:center;" onclick="handleEditProfile()">✏️ Edit Profile</button>
           <button class="btn btn-ghost" style="width:100%;margin-top:8px;justify-content:center;" onclick="sendMyPasswordReset()">🔑 Change Password</button>
         </div>
         <div style="display:flex;flex-direction:column;gap:14px;">
@@ -720,10 +720,13 @@
   <div class="mf"><button class="btn btn-ghost" onclick="handleDownloadAllZip()">⬇ Download All</button><button class="btn btn-red" onclick="handleBulkSend()">📧 Send to Members</button></div></div>
 </div>
 <div class="mo" id="a-edit-member">
-  <div class="modal"><div class="mh"><div><div class="mt" id="aem-title">✏ Edit Member</div><div style="font-size:12px;color:var(--t3);margin-top:2px;" id="aem-sub"></div></div><button class="mc" onclick="closeMo('a-edit-member')">✕</button></div>
+  <div class="modal"><div class="mh"><div><div class="mt" id="aem-title">✏️ Edit Member</div><div style="font-size:12px;color:var(--t3);margin-top:2px;" id="aem-sub"></div></div><button class="mc" onclick="closeMo('a-edit-member')">✕</button></div>
   <div class="mb">
     <div class="aem-info" id="aem-info"></div>
     <div style="font-size:11px;color:var(--t3);margin:8px 0 16px;line-height:1.5;">🔒 Personal details can only be changed by the member from their own profile.</div>
+    <div class="fg2" id="aem-role-wrap" style="display:none;"><div class="fl2">Account Type <span class="badge bg-r" style="margin-left:4px;">Super admin only</span></div>
+      <select class="fs2" id="aem-role" onchange="onEditRoleChange()"><option value="member">Member</option><option value="admin">Admin</option><option value="super_admin">Super Admin</option></select>
+      <div class="mf-hint" id="aem-role-hint"></div></div>
     <div class="fg2"><div class="fl2">Area of Expertise</div><select class="fs2" id="aem-expertise"><option value="">— Not set —</option></select></div>
     <div class="g2">
       <div class="fg2"><div class="fl2">Mastery Level</div><select class="fs2" id="aem-level"><option>Entry</option><option>Mid</option><option>Master</option></select></div>
