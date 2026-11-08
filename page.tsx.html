@@ -1,0 +1,17 @@
+import { createClient } from '@/utils/supabase/client';
+
+export default async function AnalyticsPage() {
+  const supabase = createClient();
+
+  // Fetch attendance rates and provincial breakdowns
+  const { data: attendanceData, error } = await supabase
+    .from('attendance_logs')
+    .select('*, training_sessions(title, area_of_expertise)');
+
+  return (
+    <div className="p-6">
+      <h1 className="text-2xl font-bold">Real-Time Analytical Dashboard</h1>
+      {/* Render Chart.js data widgets here */}
+    </div>
+  );
+}
