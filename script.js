@@ -891,6 +891,7 @@ let archiveTargetId = null;
 // MEMBER: load + render
 // ════════════════════════════════════════════════
 async function loadMemberData() {
+  lastDataLoad = Date.now();
   try {
     memberData = await rpc('member_dashboard');
   } catch (e) {
@@ -1451,7 +1452,9 @@ function handleMemberSearch(query) {
 // ════════════════════════════════════════════════
 // ADMIN: load + render
 // ════════════════════════════════════════════════
+let lastDataLoad = 0;
 async function loadAdminData() {
+  lastDataLoad = Date.now();
   const [dash, who, list] = await Promise.allSettled([rpc('admin_dashboard'), rpc('admin_whoami'), rpc('admin_members')]);
   adminData = dash.status === 'fulfilled' ? dash.value : null;
   adminMe = who.status === 'fulfilled' ? who.value : null;
@@ -1624,19 +1627,59 @@ function handleViewMember(userId) {
     + `<button class="btn btn-ghost" onclick="closeMo('a-member-detail')">Close</button>`);
   openMo('a-member-detail');
 }
+let aSessionQuery = '';
+function sessionMatches(s, q) {
+  return [s.title, s.speaker, s.area, s.type].some(v => String(v || '').toLowerCase().includes(q));
+}
+function memberMatches(m, q) {
+  return [m.full_name, m.member_id, m.email].some(v => String(v || '').toLowerCase().includes(q));
+}
+// Top search bar: searches the page you are on; from other pages it goes to whichever has matches
 function handleAdminSearch(query) {
+  const q = query.trim(), lq = q.toLowerCase();
+  const on = id => document.getElementById(id)?.classList.contains('active');
+  if (!q) { clearSessionSearch(); const el = document.getElementById('a-mem-search'); if (el && el.value) { el.value = ''; renderMembersTable(); } return; }
+  const sCount = (ad().sessions || []).filter(s => sessionMatches(s, lq)).length;
+  const mCount = membersSource().filter(m => memberMatches(m, lq)).length;
+  const toSessions = on('ap-sessions') || (!on('ap-members') && sCount > 0 && mCount === 0);
+  if (toSessions) {
+    aSessionQuery = q;
+    aShowPage('sessions');
+    renderSessions();
+    if (!sCount) showToast(`No sessions match "${q}".`, 'info', 4000);
+    return;
+  }
+  if (!on('ap-members') && !mCount) { showToast(`Nothing found for "${q}" — no members or sessions match.`, 'info', 4500); return; }
   aShowPage('members');
-  const el = document.getElementById('a-mem-search'); if (el) el.value = query.trim();
+  const el = document.getElementById('a-mem-search'); if (el) el.value = q;
   aMembersPage = 1;
   renderMembersTable();
+}
+function clearSessionSearch() {
+  if (!aSessionQuery) return;
+  aSessionQuery = '';
+  const top = document.getElementById('a-search-input'); if (top) top.value = '';
+  renderSessions();
 }
 
 // ── Sessions ──
 function renderSessions() {
-  const all = ad().sessions || [];
+  const sq = aSessionQuery.trim().toLowerCase();
+  const all = (ad().sessions || []).filter(s => !sq || sessionMatches(s, sq));
   const upcoming = all.filter(isUpcomingSession).sort((a, b) => new Date(a.start) - new Date(b.start));
   const past = all.filter(isPastSession);
   const drafts = all.filter(s => s.status === 'Draft');
+  const chip = document.getElementById('a-sess-filter');
+  if (chip) {
+    chip.style.display = sq ? 'flex' : 'none';
+    if (sq) {
+      chip.innerHTML = `<span>🔎 Sessions matching “<strong>${esc(aSessionQuery)}</strong>” — ${all.length} found (${upcoming.length} upcoming · ${past.length} past · ${drafts.length} draft${drafts.length === 1 ? '' : 's'})</span><button class="btn btn-xs btn-ghost" onclick="clearSessionSearch()">✕ Clear</button>`;
+      // jump to the first tab that has a match
+      const cur = document.querySelector('#ap-sessions .apanel.active')?.id;
+      const has = { 'as-upcoming': upcoming.length, 'as-past': past.length, 'as-draft': drafts.length };
+      if (!has[cur]) { const t = Object.keys(has).find(k => has[k]); if (t) aSwitchTab(document.getElementById({ 'as-upcoming': 'a-tab-upcoming', 'as-past': 'a-tab-past', 'as-draft': 'a-tab-draft' }[t]), t); }
+    }
+  }
   setText('a-tab-upcoming', `Upcoming (${upcoming.length})`);
   setText('a-tab-past', `Past Sessions (${past.length})`);
   setText('a-tab-draft', `Drafts (${drafts.length})`);
@@ -1651,7 +1694,7 @@ function renderSessions() {
       <div style="font-size:12px;color:var(--t2);display:flex;flex-direction:column;gap:3px;"><div>📅 ${fmtDate(s.start)} · ${fmtTime(s.start)} · ${esc(s.duration)} min</div><div>👤 ${esc(s.speaker)} · ${esc(areaStyle(s.area).short)}</div>${s.zoom_join_url ? `<div>🔗 <span style="color:var(--blue);cursor:pointer;" onclick="copyZoomLink('${esc(s.session_id)}')">${esc(String(s.zoom_join_url).replace(/^https?:\/\//, ''))}</span></div>` : '<div style="color:#B45309;">🔗 No Zoom link yet</div>'}<div>💳 ${Number(s.fee) > 0 ? fmtMoney(s.fee) + ' admission fee' : 'Free session'}</div></div>
       <div style="display:flex;gap:14px;margin-top:11px;">${[['Registered', s.registered, 'var(--blue)'], ['Paid', s.paid, 'var(--green)'], ['Pending Pay', s.pending_pay, 'var(--yellow)'], ['Capacity', s.capacity, 'var(--red)']].map(([l, v, c]) => `<div style="text-align:center;"><div style="font-family:var(--font-h);font-size:18px;font-weight:800;color:${c};">${fmtInt(v)}</div><div style="font-size:11px;color:var(--t3);">${l}</div></div>`).join('')}</div>
       <div class="prog" style="margin-top:7px;"><div class="prog-f" style="width:${Math.min(cap, 100)}%;background:var(--blue);"></div></div><div style="font-size:11px;color:var(--t3);margin-top:3px;">${cap}% capacity</div></div>`;
-  }).join('') : `<div style="grid-column:1/-1;">${emptyState('📅', 'No upcoming sessions. Click "+ Create New Session" to add one.')}</div>`);
+  }).join('') : `<div style="grid-column:1/-1;">${emptyState('📅', sq ? 'No upcoming sessions match your search.' : 'No upcoming sessions. Click "+ Create New Session" to add one.')}</div>`);
 
   setHtml('a-sess-past', past.length ? past.map(s => {
     const cancelled = s.status === 'Cancelled';
@@ -1659,11 +1702,11 @@ function renderSessions() {
     const sync = cancelled ? '<span class="badge bg-gr">Cancelled</span>' : synced ? '<span class="badge bg-g">✓ Synced</span>' : Number(s.registered) ? '<span class="badge bg-y">⏳ Awaiting Sync</span>' : '<span class="badge bg-gr">No registrations</span>';
     const action = cancelled ? '—' : `<button class="btn btn-xs ${synced ? 'btn-ghost' : 'btn-red'}" onclick="goToAttendance('${esc(s.session_id)}')">${synced ? 'View Certs' : 'Sync Now'}</button>`;
     return `<tr><td class="nc">${esc(s.title)}</td><td>${fmtDateShort(s.start)}</td><td>${areaBadge(s.area)}</td><td>${fmtInt(s.attended)}/${fmtInt(s.registered)}</td><td><span class="badge ${Number(s.certs) ? 'bg-g' : 'bg-y'}">${Number(s.certs) ? fmtInt(s.certs) : 'None'}</span></td><td>${fmtMoney(s.revenue)}</td><td>${sync}</td><td>${action}</td></tr>`;
-  }).join('') : emptyRow(8, 'No past sessions yet.'));
+  }).join('') : emptyRow(8, sq ? 'No past sessions match your search.' : 'No past sessions yet.'));
 
   setHtml('a-sess-drafts', drafts.length ? drafts.map(s => `
     <div class="card cp" style="border:2px dashed var(--border);"><span class="badge bg-gr" style="margin-bottom:9px;">Draft</span><div style="font-family:var(--font-h);font-size:14px;font-weight:700;margin-bottom:5px;">${esc(s.title)}</div><div style="font-size:12px;color:var(--t3);margin-bottom:11px;">Created ${fmtDate(s.created_at)} · planned for ${fmtDate(s.start)}</div><div style="display:flex;gap:7px;flex-wrap:wrap;"><button class="btn btn-sm btn-red" onclick="openSessionEditor('${esc(s.session_id)}')">Continue Editing</button><button class="btn btn-sm btn-ghost" onclick="publishDraft('${esc(s.session_id)}')">Publish</button><button class="btn btn-sm btn-danger" onclick="handleDeleteDraft('${esc(s.session_id)}')">Delete</button></div></div>`).join('')
-    : `<div style="grid-column:1/-1;">${emptyState('📝', 'No drafts.')}</div>`);
+    : `<div style="grid-column:1/-1;">${emptyState('📝', sq ? 'No drafts match your search.' : 'No drafts.')}</div>`);
 }
 function goToAttendance(sessionId) {
   const s = (ad().sessions || []).find(x => x.session_id === sessionId);
@@ -1695,6 +1738,7 @@ function openSessionEditor(sessionId) {
   if (s && Number(s.registered) > 0) { warn.style.display = 'block'; warn.textContent = `⚠ ${fmtInt(s.registered)} member(s) are registered. They are not notified automatically — please let them know about changes.`; }
   else warn.style.display = 'none';
   document.getElementById('acs-err').style.display = 'none';
+  SESSION_FIELDS.forEach(id => setFieldError(id, ''));
   let footer;
   if (!s) footer = `<button class="btn btn-ghost" onclick="saveSession('Draft')">Save as Draft</button><button class="btn btn-red" onclick="saveSession('Upcoming')">Publish Session</button>`;
   else if (s.status === 'Draft') footer = `<button class="btn btn-ghost" onclick="saveSession('Draft')">Save Draft</button><button class="btn btn-red" onclick="saveSession('Upcoming')">Publish</button>`;
@@ -1702,24 +1746,88 @@ function openSessionEditor(sessionId) {
   setHtml('acs-footer', footer);
   openMo('a-create-session');
 }
+// ── Zoom connection (supabase/functions/zoom). Keys stay on the server. ──
+async function zoomCall(action, sessionId) {
+  try {
+    const { data, error } = await sb.functions.invoke('zoom', { body: { action, session_id: sessionId } });
+    if (error) {
+      let msg = error.message || 'Zoom request failed', code = '';
+      try { const b = await error.context.json(); if (b && b.error) { msg = b.error; code = b.code || ''; } } catch (_) { /* no body */ }
+      const status = error.context && error.context.status;
+      if (status === 404 || /Failed to send a request|not found/i.test(error.message || '')) { msg = 'Zoom is not connected yet (see ZOOM_SETUP.md).'; code = 'not_configured'; }
+      return { ok: false, reason: msg, code };
+    }
+    return { ok: true, data: data || {} };
+  } catch (e) {
+    return { ok: false, reason: 'Zoom is not connected yet (see ZOOM_SETUP.md).', code: 'not_configured' };
+  }
+}
+// Creates/updates the Zoom meeting of a published session and tells the admin what happened
+async function ensureZoomMeeting(sessionId, title) {
+  const z = await zoomCall('upsert_meeting', sessionId);
+  if (z.ok && z.data.status === 'created') showToast(`Zoom meeting created for "${title}".`, 'success', 4000);
+  else if (z.ok && z.data.status === 'updated') showToast('Zoom meeting updated to match the session.', 'success', 3500);
+  else if (!z.ok) showToast(`The session is saved, but its Zoom link could not be created automatically: ${z.reason} You can paste a link in Edit for now.`, 'info', 9000);
+  return z;
+}
+
+// Same rules as 12_session_fixes.sql — wrong values are rejected, never silently changed
+function validateSessionForm(publishing, existing) {
+  const g = id => (document.getElementById(id)?.value || '').trim();
+  const errs = {};
+  const num = (id, label, { min, max, whole }) => {
+    const v = g(id);
+    if (v === '') { errs[id] = `${label} is required.`; return; }
+    if (!/^-?\d+(\.\d+)?$/.test(v)) { errs[id] = `${label} must be a number.`; return; }
+    const n = Number(v);
+    if (whole && !Number.isInteger(n)) errs[id] = `${label} must be a whole number.`;
+    else if (n < min) errs[id] = min === 0 ? `${label} cannot be negative. Enter 0 for a free session.` : `${label} must be at least ${min}.`;
+    else if (n > max) errs[id] = `${label} is too large (maximum ${max.toLocaleString()}).`;
+  };
+  if (!g('acs-title')) errs['acs-title'] = 'Session title is required.';
+  else if (g('acs-title').length > 150) errs['acs-title'] = 'Session title must be 150 characters or fewer.';
+  num('acs-fee', 'Admission fee', { min: 0, max: 1000000 });
+  num('acs-capacity', 'Capacity', { min: 1, max: 100000, whole: true });
+  num('acs-duration', 'Duration', { min: 1, max: 1440, whole: true });
+  if (!errs['acs-capacity'] && existing && Number(g('acs-capacity')) < Number(existing.registered || 0))
+    errs['acs-capacity'] = `Capacity cannot be lower than the ${existing.registered} member(s) already registered.`;
+  if (g('acs-zoom') && !/^https:\/\/\S+$/i.test(g('acs-zoom'))) errs['acs-zoom'] = 'The meeting link must start with https://';
+  if (publishing) {
+    if (!g('acs-speaker')) errs['acs-speaker'] = 'A speaker name is required before publishing.';
+    if (!g('acs-date')) errs['acs-date'] = 'Pick a date before publishing.';
+    if (!g('acs-time')) errs['acs-time'] = 'Pick a time before publishing.';
+    if (g('acs-date') && g('acs-time')) {
+      const start = new Date(`${g('acs-date')}T${g('acs-time')}:00+08:00`);
+      const changed = !existing || existing.status === 'Draft' || Math.abs(new Date(existing.start) - start) > 59000;
+      if (changed && start <= Date.now()) errs['acs-date'] = 'The date and time are in the past.';
+    }
+  }
+  return errs;
+}
+const SESSION_FIELDS = ['acs-title', 'acs-speaker', 'acs-date', 'acs-time', 'acs-duration', 'acs-capacity', 'acs-zoom', 'acs-fee'];
 async function saveSession(status) {
   const g = id => (document.getElementById(id)?.value || '').trim();
   const err = document.getElementById('acs-err');
   const fail = t => { err.textContent = t; err.style.display = 'block'; };
   err.style.display = 'none';
-  if (!g('acs-title')) return fail('Please enter a session title.');
-  if (status === 'Upcoming' || (status === null && editingSessionId)) {
-    if (!g('acs-date')) return fail('Please pick a date.');
-    if (!g('acs-speaker')) return fail('Please enter the speaker name.');
-  }
+  const existing = editingSessionId ? (ad().sessions || []).find(x => x.session_id === editingSessionId) : null;
+  const publishing = status === 'Upcoming' || (status === null && existing && existing.status !== 'Draft');
+  const errs = validateSessionForm(publishing, existing);
+  SESSION_FIELDS.forEach(id => setFieldError(id, errs[id] || ''));
+  const bad = Object.keys(errs);
+  if (bad.length) { document.getElementById(bad[0])?.focus(); return fail(bad.length === 1 ? errs[bad[0]] : 'Please fix the fields marked in red. Nothing was saved.'); }
+
   const start = g('acs-date') ? `${g('acs-date')}T${g('acs-time') || '00:00'}:00+08:00` : '';
-  if (status === 'Upcoming' && start && new Date(start) < Date.now()) return fail('The date and time are in the past.');
   const data = {
     title: g('acs-title'), description: g('acs-desc'), area: g('acs-area'), type: g('acs-type'),
     speaker: g('acs-speaker'), speaker_title: g('acs-speaker-title'), accreditation: g('acs-accreditation'),
     start, duration: g('acs-duration'), fee: g('acs-fee'), capacity: g('acs-capacity'), zoom_join_url: g('acs-zoom')
   };
   if (status) data.status = status;
+  const feeChanged = existing && Number(existing.fee) !== Number(data.fee) && Number(existing.registered) > 0;
+  if (feeChanged && !confirm(Number(data.fee) === 0
+      ? `Make "${data.title}" free? The ${existing.registered} registered member(s) who haven't paid will no longer owe anything and will get the Zoom link.`
+      : `Change the fee from ${fmtMoney(existing.fee)} to ${fmtMoney(data.fee)}? Registered members who haven't paid yet will owe the new amount.`)) return;
   const btns = document.querySelectorAll('#acs-footer button'); btns.forEach(b => b.disabled = true);
   try {
     const wasEditing = !!editingSessionId;
@@ -1729,6 +1837,7 @@ async function saveSession(status) {
     logAdminAction(action, data.title, { session_id: id });
     closeMo('a-create-session');
     showToast(status === 'Draft' ? 'Session saved as draft.' : status === 'Upcoming' ? `"${data.title}" published! Members can now see it.` : 'Session updated.', 'success');
+    if (publishing) await ensureZoomMeeting(id, data.title);
     await loadAdminData();
   } catch (e) {
     fail(friendlyAuthError(e));
@@ -1738,13 +1847,26 @@ async function saveSession(status) {
 }
 async function publishDraft(sessionId) {
   const s = (ad().sessions || []).find(x => x.session_id === sessionId); if (!s) return;
-  if (new Date(s.start) < Date.now()) { showToast('This draft is dated in the past. Edit the date before publishing.', 'error', 5000); openSessionEditor(sessionId); return; }
+  // a draft must be complete before members can see it
+  const missing = [];
+  if (!s.speaker || s.speaker === 'To be announced') missing.push('a speaker name');
+  if (!s.start) missing.push('a date and time');
+  else if (new Date(s.start) <= Date.now()) missing.push('a date in the future');
+  if (!(Number(s.duration) >= 1)) missing.push('a duration of at least 1 minute');
+  if (!(Number(s.capacity) >= 1)) missing.push('a capacity of at least 1');
+  if (!(Number(s.fee) >= 0)) missing.push('a fee of 0 or more');
+  if (missing.length) {
+    showToast(`"${s.title}" can't be published yet — it needs ${missing.join(', ')}. Complete it, then publish.`, 'error', 7000);
+    openSessionEditor(sessionId);
+    return;
+  }
   try {
     await rpc('admin_set_session_status', { p_id: sessionId, p_status: 'Upcoming' });
     logAdminAction('Published session', s.title, { session_id: sessionId });
     showToast(`"${s.title}" published!`, 'success');
+    await ensureZoomMeeting(sessionId, s.title);
     await loadAdminData();
-  } catch (e) { showToast(friendlyAuthError(e), 'error', 5000); }
+  } catch (e) { showToast(friendlyAuthError(e), 'error', 6000); openSessionEditor(sessionId); }
 }
 async function handleCancelSession(sessionId) {
   const s = (ad().sessions || []).find(x => x.session_id === sessionId); if (!s) return;
@@ -1753,6 +1875,7 @@ async function handleCancelSession(sessionId) {
     await rpc('admin_set_session_status', { p_id: sessionId, p_status: 'Cancelled' });
     logAdminAction('Cancelled session', s.title, { session_id: sessionId });
     showToast(`"${s.title}" cancelled.`, 'error');
+    zoomCall('delete_meeting', sessionId);                 // best effort; nothing to do if Zoom isn't connected
     await loadAdminData();
   } catch (e) { showToast(friendlyAuthError(e), 'error', 5000); }
 }
@@ -1771,10 +1894,21 @@ async function handleDeleteDraft(sessionId) {
 function renderSyncSelect() {
   const sel = document.getElementById('a-sync-session'); if (!sel) return;
   const keep = sel.value;
-  const list = (ad().sessions || []).filter(s => s.status !== 'Draft' && s.status !== 'Cancelled' && new Date(s.start) <= Date.now());
-  sel.innerHTML = `<option value="">${list.length ? '-- Select session --' : 'No sessions have started yet'}</option>` +
-    list.map(s => `<option value="${esc(s.session_id)}">${esc(s.title)} · ${fmtDateShort(s.start)}${Number(s.log_count) === 0 && Number(s.registered) ? ' ⏳' : ''}</option>`).join('');
+  // every published session is listed, newest first; sessions that haven't started are labelled
+  const list = (ad().sessions || []).filter(s => s.status !== 'Draft' && s.status !== 'Cancelled').sort((a, b) => new Date(b.start) - new Date(a.start));
+  sel.innerHTML = `<option value="">${list.length ? '-- Select session --' : 'No published sessions yet'}</option>` +
+    list.map(s => `<option value="${esc(s.session_id)}">${esc(s.title)} · ${fmtDateShort(s.start)}${new Date(s.start) > Date.now() ? ' (not started)' : Number(s.log_count) === 0 && Number(s.registered) ? ' ⏳ needs sync' : ''}</option>`).join('');
   if ([...sel.options].some(o => o.value === keep)) sel.value = keep;
+}
+// The attendance log shown after a sync: every registered member, whether Zoom saw them or not
+function attendanceLogHtml(log) {
+  const regs = (log && log.registrants) || [], un = (log && log.unmatched) || [];
+  const badge = r => ({ ATTENDED: '<span class="badge bg-g">✓ Attended ≥80%</span>', INCOMPLETE: '<span class="badge bg-y">Below 80%</span>', ABSENT: '<span class="badge bg-r">Absent</span>' }[r.attendance_status] || '<span class="badge bg-gr">Awaiting Zoom data</span>');
+  return `<div style="font-family:var(--font-h);font-size:13px;font-weight:700;margin:14px 0 6px;">📋 Attendance log — ${regs.length} registered member${regs.length === 1 ? '' : 's'}</div>
+    <div style="overflow-x:auto;background:white;border:1px solid var(--border);border-radius:var(--r2);"><table class="dt"><thead><tr><th>Member</th><th>Email</th><th>Payment</th><th>In Zoom report</th><th>Attendance</th><th>Result</th></tr></thead><tbody>
+    ${regs.length ? regs.map(r => `<tr><td class="nc">${esc(r.member || '—')}</td><td style="font-size:12px;color:var(--t3);">${esc(r.email || '')}</td><td>${esc((REG_PAY_LABEL[r.payment_status] || ['', r.payment_status || '—'])[1])}</td><td>${r.in_zoom ? '✓ Yes' : '—'}</td><td>${r.attendance_pct == null ? '—' : Math.round(r.attendance_pct) + '%'}</td><td>${badge(r)}</td></tr>`).join('') : emptyRow(6, 'No members have registered for this session.')}
+    </tbody></table></div>
+    ${un.length ? `<div style="font-size:12px;color:var(--t2);margin-top:8px;">❔ In the Zoom report but not matched to a member account: ${un.map(u => esc(u.email || 'no email')).join(', ')}</div>` : ''}`;
 }
 async function aSyncAttendance() {
   const id = document.getElementById('a-sync-session').value;
@@ -1783,16 +1917,35 @@ async function aSyncAttendance() {
   const s = (ad().sessions || []).find(x => x.session_id === id);
   const btn = document.getElementById('a-sync-btn'); const orig = btn.textContent;
   btn.textContent = '⏳ Syncing...'; btn.disabled = true;
+  const dismiss = `<button class="btn btn-ghost btn-sm" onclick="document.getElementById('a-sync-res').classList.remove('show')">Dismiss</button>`;
+  const warn = (title, text, log) => {
+    box.style.background = 'var(--yellow-l)'; box.style.borderColor = '#FFE082';
+    box.innerHTML = `<div style="font-family:var(--font-h);font-size:13px;font-weight:700;color:#B45309;margin-bottom:7px;">${title}</div><div style="font-size:13px;color:var(--t2);line-height:1.6;">${text}</div>${log ? attendanceLogHtml(log) : ''}<div style="margin-top:11px;">${dismiss}</div>`;
+  };
   try {
+    const getLog = async () => { try { return await rpc('admin_session_attendance', { p_session: id }); } catch (_) { return null; } };
+    if (s && new Date(s.start) > Date.now()) {
+      warn('This session hasn\'t started yet', `"${esc(s.title)}" starts ${fmtDate(s.start)} at ${fmtTime(s.start)}. Zoom attendance can be synced after the session ends.`, await getLog());
+      box.classList.add('show');
+      return;
+    }
+    // 1) pull the participant report from Zoom into attendance_logs
+    const z = await zoomCall('sync_attendance', id);
+    let zoomNote = '';
+    if (!z.ok) zoomNote = z.code === 'not_configured' ? 'Zoom is not connected yet, so attendance can\'t be pulled automatically (see ZOOM_SETUP.md).' : `Zoom could not be reached: ${esc(z.reason)}`;
+    else if (z.data.status === 'no_meeting') zoomNote = 'This session has no Zoom meeting created by the system, so there is no report to pull.';
+    else if (z.data.status === 'no_report') zoomNote = 'Zoom has no participant report for this meeting yet. Reports are ready a few minutes after the meeting ends — if nobody joined, there is nothing to report.';
+    // 2) match it against the registrations
     const r = await rpc('admin_sync_attendance', { p_session: id });
+    const log = await getLog();
     if (r.no_logs) {
-      box.style.background = 'var(--yellow-l)'; box.style.borderColor = '#FFE082';
-      box.innerHTML = `<div style="font-family:var(--font-h);font-size:13px;font-weight:700;color:#B45309;margin-bottom:7px;">No Zoom attendance found</div><div style="font-size:13px;color:var(--t2);">There are no rows in <strong>attendance_logs</strong> for "${esc(s?.title)}" yet. Once the Zoom participant report is imported, sync again.</div><div style="margin-top:11px;"><button class="btn btn-ghost btn-sm" onclick="document.getElementById('a-sync-res').classList.remove('show')">Dismiss</button></div>`;
+      warn('No Zoom attendance found', `${zoomNote || 'There are no Zoom attendance records for this session yet.'}<br>The registered members are listed below — nothing was changed.`, log);
     } else {
       box.style.background = ''; box.style.borderColor = '';
       box.innerHTML = `<div style="font-family:var(--font-h);font-size:13px;font-weight:700;color:var(--green);margin-bottom:7px;">✅ Attendance synced — ${esc(s?.title)}</div>
-        <div style="font-size:13px;color:var(--t2);display:flex;flex-direction:column;gap:3px;"><div>👥 <strong>Zoom attendees:</strong> ${fmtInt(r.attendees)}</div><div>✅ <strong>Qualified (≥80%):</strong> ${fmtInt(r.qualified)} member(s)</div><div>❌ <strong>Below threshold / absent:</strong> ${fmtInt(r.below)} member(s)</div>${Number(r.unmatched) ? `<div>❔ <strong>Zoom rows not matched to an account:</strong> ${fmtInt(r.unmatched)}</div>` : ''}</div>
-        <div style="margin-top:11px;display:flex;gap:7px;">${Number(r.needs_certs) ? `<button class="btn btn-green btn-sm" onclick="handleGenerateCertificates('${esc(id)}')">Generate ${fmtInt(r.needs_certs)} Certificate${r.needs_certs == 1 ? '' : 's'}</button>` : ''}<button class="btn btn-ghost btn-sm" onclick="document.getElementById('a-sync-res').classList.remove('show')">Dismiss</button></div>`;
+        <div style="font-size:13px;color:var(--t2);display:flex;flex-direction:column;gap:3px;"><div>👥 <strong>Zoom attendees:</strong> ${fmtInt(r.attendees)}</div><div>✅ <strong>Qualified (≥80%):</strong> ${fmtInt(r.qualified)} member(s)</div><div>❌ <strong>Below threshold / absent:</strong> ${fmtInt(r.below)} member(s)</div>${Number(r.unmatched) ? `<div>❔ <strong>Zoom rows not matched to an account:</strong> ${fmtInt(r.unmatched)}</div>` : ''}${zoomNote ? `<div style="color:#B45309;">ℹ ${zoomNote} Existing records were used.</div>` : ''}</div>
+        ${attendanceLogHtml(log)}
+        <div style="margin-top:11px;display:flex;gap:7px;">${Number(r.needs_certs) ? `<button class="btn btn-green btn-sm" onclick="handleGenerateCertificates('${esc(id)}')">Generate ${fmtInt(r.needs_certs)} Certificate${r.needs_certs == 1 ? '' : 's'}</button>` : ''}${dismiss}</div>`;
       logAdminAction('Synced Zoom attendance', s?.title, r);
     }
     box.classList.add('show');
@@ -2375,7 +2528,7 @@ function reportScope() {
   const d = ad(), g = id => document.getElementById(id)?.value || '';
   const type = g('rep-type') || 'general', area = g('rep-area'), prov = g('rep-province');
   let sessions = (d.sessions || []).filter(s => s.status !== 'Draft');
-  let label = 'General report · All time', from = null, to = null;
+  let label = 'General report · All time', from = null, to = null, error = '', errorFields = [];
   if (type === 'session') {
     sessions = sessions.filter(s => s.session_id === g('rep-session'));
     label = sessions[0] ? `Session report · ${sessions[0].title} · ${fmtDate(sessions[0].start)} ${fmtTime(sessions[0].start)}` : 'Session report · choose a session';
@@ -2388,9 +2541,11 @@ function reportScope() {
       label = `Yearly report · ${y}`;
     } else if (type === 'range') {
       from = manilaTs(g('rep-from')); to = manilaTs(g('rep-to'));
-      if (from && to && from > to) [from, to] = [to, from];
+      if (!from || !to || isNaN(from) || isNaN(to)) { error = 'Choose both a From and a To date and time to generate this report.'; errorFields = [!from || isNaN(from) ? 'rep-from' : null, !to || isNaN(to) ? 'rep-to' : null]; from = to = null; }
+      else if (from > to) { error = `Invalid date range: From (${fmtDate(from.toISOString())} ${fmtTime(from.toISOString())}) is later than To (${fmtDate(to.toISOString())} ${fmtTime(to.toISOString())}). Correct the dates to generate the report.`; errorFields = ['rep-from', 'rep-to']; }
+      if (error) sessions = [];
       sessions = sessions.filter(s => (!from || new Date(s.start) >= from) && (!to || new Date(s.start) <= to));
-      label = `Date & time report · ${from ? `${fmtDate(from.toISOString())} ${fmtTime(from.toISOString())}` : 'start'} – ${to ? `${fmtDate(to.toISOString())} ${fmtTime(to.toISOString())}` : 'now'}`;
+      label = error ? 'Date & time report · invalid date range' : `Date & time report · ${fmtDate(from.toISOString())} ${fmtTime(from.toISOString())} – ${fmtDate(to.toISOString())} ${fmtTime(to.toISOString())}`;
     }
     if (area) { sessions = sessions.filter(s => s.area === area); label += ` · ${area}`; }
   }
@@ -2405,7 +2560,7 @@ function reportScope() {
     regs = regs.filter(r => provOf.get(r.user_id) === prov);
     pays = pays.filter(p => provByEmail.get(String(p.email || '').toLowerCase()) === prov);
   }
-  return { type, area, prov, label, sessions, regs, pays, from, to, provOf, people };
+  return { type, area, prov, label, sessions, regs, pays, from, to, provOf, people, error, errorFields, empty: !sessions.length };
 }
 
 function renderAnalytics() {
@@ -2414,6 +2569,20 @@ function renderAnalytics() {
   document.querySelectorAll('#a-analytics-section [data-for]').forEach(el => { el.style.display = el.dataset.for.split(' ').includes(t) ? '' : 'none'; });
   const S = reportScope(), now = Date.now();
   setText('rep-scope', S.label);
+  // UC-04: invalid criteria or no matching data → say so and block report generation
+  ['rep-from', 'rep-to'].forEach(id => document.getElementById(id)?.classList.toggle('is-invalid', S.errorFields.includes(id)));
+  const msg = document.getElementById('rep-msg');
+  if (msg) {
+    msg.style.display = S.error || S.empty ? 'flex' : 'none';
+    msg.className = 'rep-msg ' + (S.error ? 'is-error' : 'is-empty');
+    msg.innerHTML = S.error ? `<span>⚠</span><div><strong>${esc(S.error)}</strong></div>`
+      : `<span>ℹ</span><div><strong>No data matches the selected report filters.</strong> Change the filters to generate a report.</div>`;
+  }
+  ['rep-export-btn', 'rep-print-btn'].forEach(id => {
+    const b = document.getElementById(id); if (!b) return;
+    b.disabled = !!(S.error || S.empty);
+    b.title = S.error ? 'Fix the report dates first' : S.empty ? 'No data matches the selected report filters' : '';
+  });
   const held = S.sessions.filter(s => new Date(s.start) <= now);
   const r = rateOf(S.regs);
   const registered = S.prov ? S.regs.length : S.sessions.reduce((a, s) => a + Number(s.registered || 0), 0);
@@ -2591,8 +2760,19 @@ function renderReportInsights(S, r, provRows, areaRows, paid, pend) {
 }
 
 // ── Export / print the current report
-function exportAnalyticsReport() {
-  const S = reportScope(); renderAnalytics();
+// Always works from fresh data (another tab or admin may have changed something),
+// and never generates a report from invalid criteria or with nothing in it.
+async function freshReportScope() {
+  let S = reportScope();
+  if (S.error) { showToast(S.error, 'error', 6000); return null; }
+  await loadAdminData();
+  S = reportScope(); renderAnalytics();
+  if (S.error) { showToast(S.error, 'error', 6000); return null; }
+  if (S.empty) { showToast('No data matches the selected report filters — there is nothing to export.', 'error', 5000); return null; }
+  return S;
+}
+async function exportAnalyticsReport() {
+  const S = await freshReportScope(); if (!S) return;
   const r = rateOf(S.regs);
   const rows = [['GameChanger — Analytics Report'], [S.label], [`Generated ${fmtDate(new Date().toISOString())} ${fmtTime(new Date().toISOString())}`], [],
     ['Summary'], ['Sessions', S.sessions.length], ['Registrations', S.prov ? S.regs.length : S.sessions.reduce((a, s) => a + Number(s.registered || 0), 0)],
@@ -2611,8 +2791,8 @@ function exportAnalyticsReport() {
   logAdminAction('Exported analytics report', S.label);
   showToast('Report exported.', 'success');
 }
-function printAnalyticsReport() {
-  const S = reportScope(); renderAnalytics();
+async function printAnalyticsReport() {
+  const S = await freshReportScope(); if (!S) return;
   const r = rateOf(S.regs);
   const w = window.open('', '_blank');
   if (!w) { showToast('Allow pop-ups for this site to print the report.', 'error', 5000); return; }
@@ -2633,6 +2813,17 @@ function printAnalyticsReport() {
   w.document.close();
   logAdminAction('Printed analytics report', S.label);
 }
+
+// ── Keep an open tab up to date: reload when the tab is looked at again ──
+// (e.g. a session cancelled or a fee changed in another tab / by another admin)
+async function refreshIfStale() {
+  if (document.hidden || !loggedInUser || Date.now() - lastDataLoad < 10000) return;
+  if (document.querySelector('.mo.open')) return;                     // don't disturb an open form
+  if (currentRole === 'admin') await loadAdminData(); else await loadMemberData();
+}
+document.addEventListener('visibilitychange', refreshIfStale);
+window.addEventListener('focus', refreshIfStale);
+setInterval(refreshIfStale, 60000);
 
 // ── Chart tooltips: any element with data-tip shows it on hover
 document.addEventListener('mouseover', e => {

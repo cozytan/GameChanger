@@ -441,3 +441,10 @@ tr.is-archived td{opacity:.6;}
 .chart-tip.show{opacity:1;}
 .chart-tip b{color:white;}
 @media (max-width:1200px){.rep-kpis{grid-template-columns:repeat(3,1fr);}.rep-detail-grid{grid-template-columns:repeat(2,1fr);}}
+
+/* report messages (invalid criteria / no data), disabled buttons, session search chip */
+.rep-msg{display:flex;align-items:flex-start;gap:9px;margin-top:12px;padding:10px 13px;border-radius:var(--r2);font-size:13px;line-height:1.5;}
+.rep-msg.is-error{background:var(--red-l);color:var(--red-d);}
+.rep-msg.is-empty{background:var(--yellow-l);color:#8A4B00;}
+.btn:disabled{opacity:.45;cursor:not-allowed;pointer-events:auto;}
+.sess-filter{align-items:center;justify-content:space-between;gap:10px;margin-bottom:12px;padding:9px 13px;background:var(--blue-l);color:var(--t1);border-radius:var(--r2);font-size:13px;}

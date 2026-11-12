@@ -464,7 +464,7 @@
   <div class="main">
     <header class="topbar">
       <div class="topbar-title" id="a-page-title">Analytic Dashboard</div>
-      <div class="tb-search"><span class="sico"><svg width="13" height="13" fill="none" stroke="currentColor" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path stroke-linecap="round" d="m21 21-4.35-4.35"/></svg></span><input placeholder="Search members, sessions..." id="a-search-input" onkeydown="if(event.key==='Enter')handleAdminSearch(this.value)"></div>
+      <div class="tb-search"><span class="sico"><svg width="13" height="13" fill="none" stroke="currentColor" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path stroke-linecap="round" d="m21 21-4.35-4.35"/></svg></span><input placeholder="Search members, sessions..." id="a-search-input" onkeydown="if(event.key==='Enter')handleAdminSearch(this.value)" onsearch="handleAdminSearch(this.value)"></div>
       <div class="tb-right">
         <div class="ib" onclick="toggleBot()"><div class="ndot" style="background:var(--yellow);"></div><span style="font-size:15px;">🤖</span></div>
         <div class="ib" onclick="toggleNotifications('admin')"><div class="ndot" id="a-bell-dot" style="background:var(--red);display:none;"></div><svg width="15" height="15" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" d="M15 17H9v1a3 3 0 006 0v-1zm-9 0a9 9 0 0118 0"/></svg></div>
@@ -519,8 +519,8 @@
         <div class="rep-head">
           <div><div class="rep-title">📊 Analytics Report</div><div class="rep-scope" id="rep-scope">General report · All time</div></div>
           <div class="rep-actions">
-            <button class="btn btn-ghost btn-sm" onclick="exportAnalyticsReport()">⬇ Export CSV</button>
-            <button class="btn btn-ghost btn-sm" onclick="printAnalyticsReport()">🖨 Print / Save PDF</button>
+            <button class="btn btn-ghost btn-sm" id="rep-export-btn" onclick="exportAnalyticsReport()">⬇ Export CSV</button>
+            <button class="btn btn-ghost btn-sm" id="rep-print-btn" onclick="printAnalyticsReport()">🖨 Print / Save PDF</button>
           </div>
         </div>
         <div class="rep-filters">
@@ -548,6 +548,7 @@
           <button class="fchip" onclick="setReportRange('lastmonth')">Last month</button>
           <button class="fchip" onclick="setReportRange('quarter')">This quarter</button>
         </div>
+        <div class="rep-msg" id="rep-msg" role="alert" style="display:none;"></div>
         <div class="rep-kpis" id="rep-kpis"></div>
       </div>
       <div id="rep-session-detail"></div>
@@ -592,6 +593,7 @@
     <!-- ADMIN SESSIONS -->
     <div id="ap-sessions" class="page">
       <div style="display:flex;justify-content:flex-end;margin-bottom:16px;"><button class="btn btn-red" onclick="openSessionEditor()">+ Create New Session</button></div>
+      <div class="sess-filter" id="a-sess-filter" style="display:none;"></div>
       <div class="pill-tabs">
         <button class="pt active" id="a-tab-upcoming" onclick="aSwitchTab(this,'as-upcoming')">Upcoming</button>
         <button class="pt" id="a-tab-past" onclick="aSwitchTab(this,'as-past')">Past Sessions</button>
@@ -702,9 +704,9 @@
     <div class="fg2"><div class="fl2">Speaker Title</div><input class="fi2" id="acs-speaker-title" placeholder="e.g. HR Analytics Specialist"></div>
     <div class="fg2"><div class="fl2">Date</div><input class="fi2" type="date" id="acs-date"></div>
     <div class="fg2"><div class="fl2">Time</div><input class="fi2" type="time" id="acs-time" value="14:00"></div>
-    <div class="fg2"><div class="fl2">Duration (min)</div><input class="fi2" type="number" id="acs-duration" value="90" min="1"></div>
-    <div class="fg2"><div class="fl2">Capacity</div><input class="fi2" type="number" id="acs-capacity" value="200" min="1"></div>
-    <div class="fg2" style="grid-column:1/-1;"><div class="fl2">Zoom / Meeting Link</div><input class="fi2" id="acs-zoom" placeholder="https://zoom.us/j/..."></div>
+    <div class="fg2"><div class="fl2">Duration (min)</div><input class="fi2" type="number" id="acs-duration" value="90" min="1" max="1440" step="1"></div>
+    <div class="fg2"><div class="fl2">Capacity</div><input class="fi2" type="number" id="acs-capacity" value="200" min="1" step="1"></div>
+    <div class="fg2" style="grid-column:1/-1;"><div class="fl2">Zoom / Meeting Link</div><input class="fi2" id="acs-zoom" placeholder="Leave blank — created automatically when the session is published"><div style="font-size:11px;color:var(--t3);margin-top:3px;">The Zoom meeting is created for you on publish. Only paste a link here if you want to use your own meeting.</div></div>
     <div class="fg2"><div class="fl2">Admission Fee (₱)</div><input class="fi2" type="number" id="acs-fee" value="0" min="0"><div style="font-size:11px;color:var(--t3);margin-top:3px;">0 = free session</div></div>
     <div class="fg2"><div class="fl2">Accreditation Body</div><input class="fi2" id="acs-accreditation" placeholder="e.g. PHRCI, TESDA, DOLE"></div>
     <div class="fg2" style="grid-column:1/-1;"><div class="fl2">Description</div><textarea class="fta" id="acs-desc" placeholder="Session description and learning outcomes..."></textarea></div>
