@@ -1336,8 +1336,9 @@ async function registerForSession(sessionId, btn) {
     const r = await rpc('member_register_session', { p_session: sessionId });
     if (r.status === 'already registered') showToast("You're already registered for this session.", 'info');
     else if (r.free) showToast("You're registered! The Zoom link is now available.", 'success', 4500);
-    else showToast(`Registered! Your seat is confirmed once the ${fmtMoney(r.fee)} fee is paid — see the Payment page.`, 'success', 5500);
-    await loadMemberData();
+    else showToast(`Registered! Pay the ${fmtMoney(r.fee)} fee and submit your reference number to unlock the Zoom link.`, 'success', 6000);
+    await Promise.all([loadMemberData(), loadMemberPayments()]);
+    if (!r.free && r.status !== 'already registered') openSubmitPayment(sessionId);
     return true;
   } catch (e) {
     showToast(friendlyAuthError(e), 'error', 5000);
@@ -1369,7 +1370,10 @@ function openSessionView(sessionId) {
   let footer = `<button class="btn btn-ghost" onclick="closeMo('m-session-view')">← Back</button>`;
   if (s.is_registered) {
     note.style.display = 'block'; note.style.background = 'var(--green-l)'; note.style.color = 'var(--green)';
-    note.textContent = s.zoom_join_url ? "You're registered. The Join button opens 15 minutes before the start." : "You're registered. Your Zoom link unlocks once your payment is confirmed (see the Payment page).";
+    note.textContent = s.zoom_join_url ? "You're registered. The Join button opens 15 minutes before the start."
+      : s.payment_status === 'PENDING_PAYMENT' ? "You're registered. Your payment is waiting for an admin to confirm it — the Zoom link unlocks after that."
+      : "You're registered. Pay the admission fee and submit your reference number to unlock the Zoom link.";
+    if (!s.zoom_join_url && s.payment_status !== 'PENDING_PAYMENT' && Number(s.fee) > 0) footer += `<button class="btn btn-primary" onclick="closeMo('m-session-view');openSubmitPayment('${esc(s.session_id)}')">💳 Submit payment</button>`;
     if (s.zoom_join_url) footer += `<button class="btn btn-primary" onclick="closeMo('m-session-view');openJoinModal('${esc(s.session_id)}')">🎯 Join options</button>`;
   } else if (full) {
     note.style.display = 'block'; note.style.background = 'var(--red-l)'; note.style.color = 'var(--red-d)';
@@ -1395,7 +1399,9 @@ function openJoinModal(sessionId) {
   setHtml('m-join-body', `You're joining: <strong>${esc(s.title)}</strong> with ${esc(s.speaker)}<br><br>📅 ${fmtDate(s.start)} · ${fmtTime(s.start)} · ${esc(s.duration)} min${s.zoom_passcode ? `<br>🔑 Passcode: <strong>${esc(s.zoom_passcode)}</strong>` : ''}<br><br>Your attendance is recorded from Zoom automatically.`);
   let footer;
   if (!s.is_registered) footer = `<button class="btn btn-primary" onclick="closeMo('m-join-modal');registerForSession('${esc(s.session_id)}')">+ Register</button>`;
-  else if (!s.zoom_join_url) footer = `<span class="badge bg-y">⏳ Zoom link unlocks once your payment is confirmed</span>`;
+  else if (!s.zoom_join_url && s.payment_status === 'PENDING_PAYMENT') footer = `<span class="badge bg-y">⏳ Payment sent — waiting for confirmation</span>`;
+  else if (!s.zoom_join_url && Number(s.fee) > 0) footer = `<button class="btn btn-primary" onclick="closeMo('m-join-modal');openSubmitPayment('${esc(s.session_id)}')">💳 Submit payment to unlock Zoom</button>`;
+  else if (!s.zoom_join_url) footer = `<span class="badge bg-y">⏳ The Zoom link isn't ready yet</span>`;
   else if (live || soon) footer = `<button class="btn btn-primary" onclick="handleJoinSession('${esc(s.session_id)}')">🚀 Join Now</button>`;
   else footer = `<span class="badge bg-b">The Join button opens 15 minutes before the start</span>`;
   setHtml('m-join-footer', footer + `<button class="btn btn-ghost" onclick="closeMo('m-join-modal')">Close</button>`);
@@ -1453,9 +1459,12 @@ function handleMemberSearch(query) {
 // ADMIN: load + render
 // ════════════════════════════════════════════════
 let lastDataLoad = 0;
+let adminPayments = null;      // admin_payments(): every payment + every unpaid registration
 async function loadAdminData() {
   lastDataLoad = Date.now();
-  const [dash, who, list] = await Promise.allSettled([rpc('admin_dashboard'), rpc('admin_whoami'), rpc('admin_members')]);
+  const [dash, who, list, pays] = await Promise.allSettled([rpc('admin_dashboard'), rpc('admin_whoami'), rpc('admin_members'), rpc('admin_payments')]);
+  adminPayments = pays.status === 'fulfilled' ? (pays.value || []) : null;
+  if (pays.status === 'rejected') console.error('[Supabase] admin_payments failed — did you run 13_payments.sql?', pays.reason);
   adminData = dash.status === 'fulfilled' ? dash.value : null;
   adminMe = who.status === 'fulfilled' ? who.value : null;
   adminMembers = list.status === 'fulfilled' ? list.value : null;
@@ -1691,7 +1700,7 @@ function renderSessions() {
     const cap = Number(s.capacity) ? Math.round(100 * Number(s.registered) / Number(s.capacity)) : 0;
     return `<div class="card cp" style="border-left:4px solid ${live || soon ? 'var(--red)' : 'var(--blue)'};"><div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:9px;">${live ? '<span class="badge bg-r">🔴 Live now</span>' : soon ? '<span class="badge bg-r">🔴 Live Soon</span>' : '<span class="badge bg-b">📅 Upcoming</span>'}<div style="display:flex;gap:5px;"><button class="btn btn-xs btn-ghost" onclick="openSessionEditor('${esc(s.session_id)}')">✏️ Edit</button><button class="btn btn-xs btn-danger" onclick="handleCancelSession('${esc(s.session_id)}')">Cancel</button></div></div>
       <div style="font-family:var(--font-h);font-size:14px;font-weight:700;margin-bottom:7px;">${esc(s.title)}</div>
-      <div style="font-size:12px;color:var(--t2);display:flex;flex-direction:column;gap:3px;"><div>📅 ${fmtDate(s.start)} · ${fmtTime(s.start)} · ${esc(s.duration)} min</div><div>👤 ${esc(s.speaker)} · ${esc(areaStyle(s.area).short)}</div>${s.zoom_join_url ? `<div>🔗 <span style="color:var(--blue);cursor:pointer;" onclick="copyZoomLink('${esc(s.session_id)}')">${esc(String(s.zoom_join_url).replace(/^https?:\/\//, ''))}</span></div>` : '<div style="color:#B45309;">🔗 No Zoom link yet</div>'}<div>💳 ${Number(s.fee) > 0 ? fmtMoney(s.fee) + ' admission fee' : 'Free session'}</div></div>
+      <div style="font-size:12px;color:var(--t2);display:flex;flex-direction:column;gap:3px;"><div>📅 ${fmtDate(s.start)} · ${fmtTime(s.start)} · ${esc(s.duration)} min</div><div>👤 ${esc(s.speaker)} · ${esc(areaStyle(s.area).short)}</div>${s.zoom_join_url ? `<div>🔗 <span style="color:var(--blue);cursor:pointer;" onclick="copyZoomLink('${esc(s.session_id)}')">${esc(String(s.zoom_join_url).replace(/^https?:\/\//, ''))}</span></div>` : `<div style="color:#B45309;display:flex;align-items:center;gap:6px;">🔗 No Zoom link yet <button class="btn btn-xs btn-ghost" onclick="generateZoomLink('${esc(s.session_id)}', this)">🎥 Generate</button></div>`}<div>💳 ${Number(s.fee) > 0 ? fmtMoney(s.fee) + ' admission fee' : 'Free session'}</div></div>
       <div style="display:flex;gap:14px;margin-top:11px;">${[['Registered', s.registered, 'var(--blue)'], ['Paid', s.paid, 'var(--green)'], ['Pending Pay', s.pending_pay, 'var(--yellow)'], ['Capacity', s.capacity, 'var(--red)']].map(([l, v, c]) => `<div style="text-align:center;"><div style="font-family:var(--font-h);font-size:18px;font-weight:800;color:${c};">${fmtInt(v)}</div><div style="font-size:11px;color:var(--t3);">${l}</div></div>`).join('')}</div>
       <div class="prog" style="margin-top:7px;"><div class="prog-f" style="width:${Math.min(cap, 100)}%;background:var(--blue);"></div></div><div style="font-size:11px;color:var(--t3);margin-top:3px;">${cap}% capacity</div></div>`;
   }).join('') : `<div style="grid-column:1/-1;">${emptyState('📅', sq ? 'No upcoming sessions match your search.' : 'No upcoming sessions. Click "+ Create New Session" to add one.')}</div>`);
@@ -1739,6 +1748,7 @@ function openSessionEditor(sessionId) {
   else warn.style.display = 'none';
   document.getElementById('acs-err').style.display = 'none';
   SESSION_FIELDS.forEach(id => setFieldError(id, ''));
+  renderZoomFieldStatus(s);
   let footer;
   if (!s) footer = `<button class="btn btn-ghost" onclick="saveSession('Draft')">Save as Draft</button><button class="btn btn-red" onclick="saveSession('Upcoming')">Publish Session</button>`;
   else if (s.status === 'Draft') footer = `<button class="btn btn-ghost" onclick="saveSession('Draft')">Save Draft</button><button class="btn btn-red" onclick="saveSession('Upcoming')">Publish</button>`;
@@ -1747,29 +1757,73 @@ function openSessionEditor(sessionId) {
   openMo('a-create-session');
 }
 // ── Zoom connection (supabase/functions/zoom). Keys stay on the server. ──
-async function zoomCall(action, sessionId) {
+// ── Zoom connection (supabase/functions/zoom). Keys stay on the server. ──
+// Every failure says which setup step is missing, so the admin knows what to fix.
+const ZOOM_FIX = {
+  not_deployed:    'The "zoom" Edge Function is not deployed in Supabase yet (Edge Functions → Deploy a new function → name it zoom).',
+  secrets_missing: 'The Zoom secrets are missing in Supabase → Edge Functions → Secrets (ZOOM_ACCOUNT_ID, ZOOM_CLIENT_ID, ZOOM_CLIENT_SECRET).',
+  sql_missing:     'Run supabase/12_session_fixes.sql in the Supabase SQL Editor.'
+};
+async function zoomCall(action, sessionId, extra) {
   try {
-    const { data, error } = await sb.functions.invoke('zoom', { body: { action, session_id: sessionId } });
-    if (error) {
-      let msg = error.message || 'Zoom request failed', code = '';
-      try { const b = await error.context.json(); if (b && b.error) { msg = b.error; code = b.code || ''; } } catch (_) { /* no body */ }
-      const status = error.context && error.context.status;
-      if (status === 404 || /Failed to send a request|not found/i.test(error.message || '')) { msg = 'Zoom is not connected yet (see ZOOM_SETUP.md).'; code = 'not_configured'; }
-      return { ok: false, reason: msg, code };
+    const { data, error } = await sb.functions.invoke('zoom', { body: Object.assign({ action, session_id: sessionId }, extra || {}) });
+    if (!error) return { ok: true, data: data || {} };
+    let msg = '', code = '';
+    try { const b = await error.context.json(); if (b && b.error) { msg = b.error; code = b.code || ''; } } catch (_) { /* no JSON body */ }
+    const status = error.context && error.context.status;
+    if (!msg) {
+      // no answer from our function at all → it isn't deployed (or crashed on start)
+      if (status === 404 || /Failed to send a request/i.test(error.message || '')) code = 'not_deployed';
+      msg = ZOOM_FIX[code] || `Zoom request failed (${status || error.message || 'no response'}). Check Supabase → Edge Functions → zoom → Logs.`;
     }
-    return { ok: true, data: data || {} };
+    return { ok: false, reason: ZOOM_FIX[code] || msg, code };
   } catch (e) {
-    return { ok: false, reason: 'Zoom is not connected yet (see ZOOM_SETUP.md).', code: 'not_configured' };
+    return { ok: false, reason: ZOOM_FIX.not_deployed, code: 'not_deployed' };
   }
 }
-// Creates/updates the Zoom meeting of a published session and tells the admin what happened
-async function ensureZoomMeeting(sessionId, title) {
-  const z = await zoomCall('upsert_meeting', sessionId);
-  if (z.ok && z.data.status === 'created') showToast(`Zoom meeting created for "${title}".`, 'success', 4000);
-  else if (z.ok && z.data.status === 'updated') showToast('Zoom meeting updated to match the session.', 'success', 3500);
-  else if (!z.ok) showToast(`The session is saved, but its Zoom link could not be created automatically: ${z.reason} You can paste a link in Edit for now.`, 'info', 9000);
+let zoomStatusCache = null;          // { ok, reason, at }
+async function zoomConnectionStatus(force) {
+  if (!force && zoomStatusCache && Date.now() - zoomStatusCache.at < 300000) return zoomStatusCache;
+  const z = await zoomCall('status');
+  zoomStatusCache = { ok: z.ok, reason: z.reason || '', code: z.code || '', at: Date.now() };
+  return zoomStatusCache;
+}
+// Creates/updates the Zoom meeting of a session and tells the admin what happened
+async function ensureZoomMeeting(sessionId, title, force) {
+  const z = await zoomCall('upsert_meeting', sessionId, force ? { force: true } : null);
+  if (z.ok && z.data.status === 'created') showToast(`🎥 Zoom meeting created for "${title}" — the link is on the session card.`, 'success', 4500);
+  else if (z.ok && z.data.status === 'updated') showToast('🎥 Zoom meeting updated to match the session.', 'success', 3500);
+  else if (!z.ok) showToast(`The session is saved, but the Zoom link could not be generated. ${z.reason}`, 'error', 10000);
+  if (zoomStatusCache) zoomStatusCache = { ok: z.ok, reason: z.reason || '', code: z.code || '', at: Date.now() };
   return z;
 }
+// "Generate Zoom link" button (session card + editor)
+async function generateZoomLink(sessionId, btn) {
+  const s = (ad().sessions || []).find(x => x.session_id === sessionId); if (!s) return;
+  const orig = btn ? btn.textContent : '';
+  if (btn) { btn.disabled = true; btn.textContent = '⏳ Generating…'; }
+  const z = await ensureZoomMeeting(sessionId, s.title, true);
+  if (btn) { btn.disabled = false; btn.textContent = orig; }
+  if (z.ok) {
+    await loadAdminData();
+    const fresh = (ad().sessions || []).find(x => x.session_id === sessionId);
+    const f = document.getElementById('acs-zoom');
+    if (f && editingSessionId === sessionId) { f.value = fresh?.zoom_join_url || z.data.join_url || ''; renderZoomFieldStatus(fresh); }
+  }
+}
+// The line under the (locked) Zoom link field in the session editor
+async function renderZoomFieldStatus(s) {
+  const box = document.getElementById('acs-zoom-status'); if (!box) return;
+  const gen = s ? `<button type="button" class="btn btn-xs btn-ghost" onclick="generateZoomLink('${esc(s.session_id)}', this)">${s.zoom_join_url ? '⟳ Regenerate' : '🎥 Generate Zoom link'}</button>` : '';
+  if (s && s.zoom_join_url) { box.innerHTML = `<span style="color:var(--green);">✓ Zoom meeting ready.</span> ${gen}`; return; }
+  box.innerHTML = '<span style="color:var(--t3);">Checking the Zoom connection…</span>';
+  const st = await zoomConnectionStatus();
+  if (box !== document.getElementById('acs-zoom-status')) return;
+  box.innerHTML = st.ok
+    ? `<span style="color:var(--green);">✓ Zoom is connected.</span> <span style="color:var(--t3);">The meeting link is generated automatically when you save.</span> ${gen}`
+    : `<span style="color:var(--red);">⚠ Zoom is not connected, so the link can't be generated yet.</span> <span style="color:var(--t2);">${esc(st.reason)}</span> ${gen}`;
+}
+// Creates/updates the Zoom meeting of a published session and tells the admin what happened
 
 // Same rules as 12_session_fixes.sql — wrong values are rejected, never silently changed
 function validateSessionForm(publishing, existing) {
@@ -1791,7 +1845,6 @@ function validateSessionForm(publishing, existing) {
   num('acs-duration', 'Duration', { min: 1, max: 1440, whole: true });
   if (!errs['acs-capacity'] && existing && Number(g('acs-capacity')) < Number(existing.registered || 0))
     errs['acs-capacity'] = `Capacity cannot be lower than the ${existing.registered} member(s) already registered.`;
-  if (g('acs-zoom') && !/^https:\/\/\S+$/i.test(g('acs-zoom'))) errs['acs-zoom'] = 'The meeting link must start with https://';
   if (publishing) {
     if (!g('acs-speaker')) errs['acs-speaker'] = 'A speaker name is required before publishing.';
     if (!g('acs-date')) errs['acs-date'] = 'Pick a date before publishing.';
@@ -1804,7 +1857,7 @@ function validateSessionForm(publishing, existing) {
   }
   return errs;
 }
-const SESSION_FIELDS = ['acs-title', 'acs-speaker', 'acs-date', 'acs-time', 'acs-duration', 'acs-capacity', 'acs-zoom', 'acs-fee'];
+const SESSION_FIELDS = ['acs-title', 'acs-speaker', 'acs-date', 'acs-time', 'acs-duration', 'acs-capacity', 'acs-fee'];
 async function saveSession(status) {
   const g = id => (document.getElementById(id)?.value || '').trim();
   const err = document.getElementById('acs-err');
@@ -1821,7 +1874,7 @@ async function saveSession(status) {
   const data = {
     title: g('acs-title'), description: g('acs-desc'), area: g('acs-area'), type: g('acs-type'),
     speaker: g('acs-speaker'), speaker_title: g('acs-speaker-title'), accreditation: g('acs-accreditation'),
-    start, duration: g('acs-duration'), fee: g('acs-fee'), capacity: g('acs-capacity'), zoom_join_url: g('acs-zoom')
+    start, duration: g('acs-duration'), fee: g('acs-fee'), capacity: g('acs-capacity')
   };
   if (status) data.status = status;
   const feeChanged = existing && Number(existing.fee) !== Number(data.fee) && Number(existing.registered) > 0;
@@ -1837,7 +1890,7 @@ async function saveSession(status) {
     logAdminAction(action, data.title, { session_id: id });
     closeMo('a-create-session');
     showToast(status === 'Draft' ? 'Session saved as draft.' : status === 'Upcoming' ? `"${data.title}" published! Members can now see it.` : 'Session updated.', 'success');
-    if (publishing) await ensureZoomMeeting(id, data.title);
+    await ensureZoomMeeting(id, data.title);          // Zoom link is always generated, never typed
     await loadAdminData();
   } catch (e) {
     fail(friendlyAuthError(e));
@@ -1883,6 +1936,7 @@ async function handleDeleteDraft(sessionId) {
   const s = (ad().sessions || []).find(x => x.session_id === sessionId); if (!s) return;
   if (!confirm(`Delete the draft "${s.title}"? This cannot be undone.`)) return;
   try {
+    if (s.zoom_join_url) await zoomCall('delete_meeting', sessionId);   // remove its Zoom meeting too
     await rpc('admin_delete_session', { p_id: sessionId });
     logAdminAction('Deleted session draft', s.title, { session_id: sessionId });
     showToast('Draft deleted.', 'error');
@@ -2042,34 +2096,61 @@ function handleDownloadAllZip() { showToast('Downloading all certificates as a Z
 
 // ── Payments (read-only; status comes from the HitPay webhook) ──
 const PAYMENT_LABEL = {
-  PAID: ['bg-g', '✓ Paid'], PENDING_PAYMENT: ['bg-y', '⏳ Pending'], WAIVED: ['bg-p', '🎁 Waived'],
+  PAID: ['bg-g', '✓ Paid'], PENDING_PAYMENT: ['bg-y', '⏳ To confirm'], UNPAID: ['bg-r', 'Not paid yet'], WAIVED: ['bg-p', '🎁 Waived'],
   FAILED: ['bg-r', '✗ Failed'], CANCELLED: ['bg-gr', 'Cancelled'], REFUNDED: ['bg-b', '↩ Refunded']
 };
 const CHANNEL_LABEL = { GCASH: 'GCash', MAYA: 'Maya', CARD: 'Card', QR_PH: 'QR Ph', MANUAL_BANK: 'Bank transfer' };
 function paymentBadge(status) { const [c, t] = PAYMENT_LABEL[status] || ['bg-gr', status || '—']; return `<span class="badge ${c}">${t}</span>`; }
+// rows for the Payment page: admin_payments() when 13_payments.sql has run, else the old list
+function paymentRows() {
+  if (adminPayments) return adminPayments.map((p, n) => Object.assign({ key: p.transaction_id || 'reg-' + p.registration_id }, p));
+  return (ad().payments || []).map(p => Object.assign({ key: p.transaction_id }, p));
+}
 function filteredPayments() {
   const sess = document.getElementById('a-pay-session')?.value || '';
   const st = document.getElementById('a-pay-status')?.value || '';
   const q = (document.getElementById('a-pay-search')?.value || '').trim().toLowerCase();
-  return (ad().payments || []).filter(p => (!sess || p.session_id === sess) && (!st || p.status === st)
-    && (!q || [p.member, p.email].some(v => String(v || '').toLowerCase().includes(q))));
+  return paymentRows().filter(p => (!sess || p.session_id === sess) && (!st || p.status === st)
+    && (!q || [p.member, p.email, p.reference].some(v => String(v || '').toLowerCase().includes(q))));
+}
+function paymentActions(p) {
+  const view = `<button class="btn btn-xs btn-ghost" onclick="openPaymentDetail('${esc(p.key)}')">View</button>`;
+  if (!p.registration_id || p.session_status === 'Cancelled') return view;
+  if (p.status === 'PENDING_PAYMENT') return `<button class="btn btn-xs btn-green" onclick="openPaymentReview('${esc(p.key)}','confirm')">✓ Confirm</button><button class="btn btn-xs btn-danger" onclick="openPaymentReview('${esc(p.key)}','reject')">Reject</button>${view}`;
+  if (p.status === 'UNPAID' && p.reg_payment_status !== 'PAID') return `<button class="btn btn-xs btn-ghost" onclick="openPaymentReview('${esc(p.key)}','mark')">Mark as paid</button>`;
+  return view;
 }
 function renderPayments() {
-  const o = ad().overview || {}, loaded = !!adminData;
-  setText('a-pay-collected', loaded ? fmtMoney(o.revenue_total) : '—');
-  setText('a-pay-pending', loaded ? fmtMoney(o.pending_amount) : '—');
-  setText('a-pay-pending-lbl', loaded ? `Pending (${fmtInt(o.pending_payments)})` : 'Pending');
-  setText('a-pay-count', loaded ? fmtInt(o.transactions) : '—');
+  const loaded = !!adminData, rows = paymentRows();
+  const sum = list => list.reduce((a, p) => a + Number(p.amount || 0), 0);
+  const toReview = rows.filter(p => p.status === 'PENDING_PAYMENT'), unpaid = rows.filter(p => p.status === 'UNPAID');
+  setText('a-pay-collected', loaded ? fmtMoney(sum(rows.filter(p => p.status === 'PAID'))) : '—');
+  setText('a-pay-pending', loaded ? fmtMoney(sum(toReview) + sum(unpaid)) : '—');
+  setText('a-pay-pending-lbl', loaded ? `To confirm (${fmtInt(toReview.length)}) · Unpaid (${fmtInt(unpaid.length)})` : 'Pending');
+  setText('a-pay-count', loaded ? fmtInt(rows.filter(p => p.transaction_id).length) : '—');
+
+  // "Needs your action": payments members submitted and are waiting for an admin
+  const box = document.getElementById('a-pay-review');
+  if (box) {
+    if (!adminPayments && loaded) {
+      box.style.display = 'block';
+      box.innerHTML = `<div class="rep-msg is-error" style="margin:0 0 14px;"><span>⚠</span><div><strong>Payments can't be confirmed yet.</strong> Run <code>supabase/13_payments.sql</code> in the Supabase SQL Editor, then reload this page.</div></div>`;
+    } else {
+      box.style.display = toReview.length ? 'block' : 'none';
+      box.innerHTML = toReview.length ? `<div class="card cp" style="border-left:4px solid var(--yellow);margin-bottom:14px;"><div style="font-family:var(--font-h);font-size:14px;font-weight:700;margin-bottom:9px;">⏳ Waiting for your confirmation (${toReview.length})</div>
+        <div style="display:flex;flex-direction:column;gap:8px;">${toReview.map(p => `<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:9px 11px;background:var(--bg);border-radius:var(--r2);"><div style="flex:1;min-width:200px;"><div class="nc">${esc(p.member || p.email)}</div><div style="font-size:12px;color:var(--t3);">${esc(p.session)} · ${fmtMoney(p.amount)} · ${esc(CHANNEL_LABEL[p.channel] || p.channel || '—')} · Ref <strong style="color:var(--t1);">${esc(p.reference || '—')}</strong> · sent ${fmtDateShort(p.submitted_at || p.date)}</div></div><div style="display:flex;gap:6px;"><button class="btn btn-xs btn-green" onclick="openPaymentReview('${esc(p.key)}','confirm')">✓ Confirm</button><button class="btn btn-xs btn-danger" onclick="openPaymentReview('${esc(p.key)}','reject')">Reject</button></div></div>`).join('')}</div>
+        <div style="font-size:12px;color:var(--t3);margin-top:8px;">Check the reference number against your GCash / Maya / bank records before confirming. Confirming releases the member's Zoom link.</div></div>` : '';
+    }
+  }
   const colors = [['var(--blue-l)', 'var(--blue)'], ['var(--yellow-l)', '#B45309'], ['var(--green-l)', 'var(--green)'], ['var(--red-l)', 'var(--red)']];
   const list = filteredPayments();
   setHtml('a-payments-tbody', list.length ? list.map((p, i) => {
     const [bg, fg] = colors[i % colors.length];
-    const paidish = p.status === 'PAID' || p.status === 'REFUNDED';
-    return `<tr><td><div style="display:flex;align-items:center;gap:7px;"><div style="width:27px;height:27px;border-radius:50%;background:${bg};display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;color:${fg};">${esc(initialsOf(p.member))}</div><div class="nc">${esc(p.member || p.email || '—')}</div></div></td><td>${esc(p.session || '—')}</td><td style="font-weight:700;">${fmtMoney(p.amount)}</td><td>${paidish ? esc(CHANNEL_LABEL[p.channel] || p.channel) : '—'}</td><td>${fmtDateShort(p.date)}</td><td>${paymentBadge(p.status)}</td><td><button class="btn btn-xs btn-ghost" onclick="openPaymentDetail('${esc(p.transaction_id)}')">View</button></td></tr>`;
-  }).join('') : emptyRow(7, (ad().payments || []).length ? 'No payments match your filters.' : 'No payments yet.'));
+    return `<tr><td><div style="display:flex;align-items:center;gap:7px;"><div style="width:27px;height:27px;border-radius:50%;background:${bg};display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;color:${fg};">${esc(initialsOf(p.member))}</div><div class="nc">${esc(p.member || p.email || '—')}</div></div></td><td>${esc(p.session || '—')}</td><td style="font-weight:700;">${fmtMoney(p.amount)}</td><td>${p.channel ? esc(CHANNEL_LABEL[p.channel] || p.channel) : '—'}${p.reference ? `<div style="font-size:11px;color:var(--t3);">Ref ${esc(p.reference)}</div>` : ''}</td><td>${fmtDateShort(p.date)}</td><td>${paymentBadge(p.status)}</td><td><div style="display:flex;gap:5px;flex-wrap:wrap;">${paymentActions(p)}</div></td></tr>`;
+  }).join('') : emptyRow(7, paymentRows().length ? 'No payments match your filters.' : 'No payments yet. Members who register for a paid session appear here.'));
 }
-function openPaymentDetail(transactionId) {
-  const p = (ad().payments || []).find(x => x.transaction_id === transactionId); if (!p) return;
+function openPaymentDetail(key) {
+  const p = paymentRows().find(x => x.key === key); if (!p) return;
   setText('apd-member', p.member || p.email || '—');
   setText('apd-session', p.session || '—');
   setText('apd-amount', fmtMoney(p.amount) + (p.currency && p.currency !== 'PHP' ? ' ' + p.currency : ''));
@@ -2077,12 +2158,62 @@ function openPaymentDetail(transactionId) {
   setText('apd-date', p.date ? `${fmtDate(p.date)} ${fmtTime(p.date)}` : '—');
   setHtml('apd-status', paymentBadge(p.status));
   const row = document.getElementById('apd-extra-row');
-  if (p.status === 'PAID' && (p.hitpay_ref || p.order_ref)) {
-    row.style.display = 'flex'; setText('apd-extra-label', 'Reference No.'); setText('apd-extra', p.hitpay_ref || p.order_ref);
-  } else {
-    row.style.display = 'none';
-  }
+  const extra = p.status === 'FAILED' && p.rejection_reason ? ['Rejected because', p.rejection_reason]
+    : (p.reference || p.hitpay_ref || p.order_ref) ? ['Reference No.', p.reference || p.hitpay_ref || p.order_ref] : null;
+  if (extra) { row.style.display = 'flex'; setText('apd-extra-label', extra[0]); setText('apd-extra', extra[1] + (p.reviewed_by ? ` · reviewed by ${p.reviewed_by}` : '')); }
+  else row.style.display = 'none';
   openMo('a-payment-detail');
+}
+
+// ── Confirm / reject / mark as paid (13_payments.sql) ──
+let reviewingPayment = null;
+function openPaymentReview(key, mode) {
+  const p = paymentRows().find(x => x.key === key); if (!p) return;
+  reviewingPayment = { p, mode };
+  const title = { confirm: '✓ Confirm Payment', reject: 'Reject Payment', mark: 'Mark as Paid' }[mode];
+  setText('apr-title', title);
+  setHtml('apr-summary', `<div><strong>${esc(p.member || p.email)}</strong></div><div style="color:var(--t2);">${esc(p.session)} · <strong>${fmtMoney(p.amount)}</strong></div>${p.reference ? `<div style="margin-top:4px;">${esc(CHANNEL_LABEL[p.channel] || p.channel || '')} · Ref <strong>${esc(p.reference)}</strong> · sent ${fmtDate(p.submitted_at || p.date)} ${fmtTime(p.submitted_at || p.date)}</div>` : ''}`);
+  document.getElementById('apr-mark').style.display = mode === 'mark' ? 'block' : 'none';
+  document.getElementById('apr-reject').style.display = mode === 'reject' ? 'block' : 'none';
+  setHtml('apr-note', mode === 'confirm' ? 'Only confirm after you have found this reference number in your GCash / Maya / bank records. The member gets their Zoom link right away.'
+    : mode === 'mark' ? 'Use this when the member paid some other way (cash, deposit…). The member gets their Zoom link right away.'
+    : 'The member will see your reason on their Payment page and can submit a corrected reference.');
+  ['apr-channel', 'apr-ref', 'apr-reason'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; setFieldError(id, ''); });
+  document.getElementById('apr-err').style.display = 'none';
+  const btn = document.getElementById('apr-go');
+  btn.className = 'btn ' + (mode === 'reject' ? 'btn-danger' : 'btn-green');
+  btn.textContent = mode === 'reject' ? 'Reject payment' : mode === 'mark' ? 'Mark as paid' : 'Confirm payment';
+  openMo('a-pay-review-mo');
+}
+async function submitPaymentReview() {
+  if (!reviewingPayment) return;
+  const { p, mode } = reviewingPayment;
+  const g = id => (document.getElementById(id)?.value || '').trim();
+  const err = document.getElementById('apr-err'); err.style.display = 'none';
+  if (mode === 'mark') {
+    const ref = g('apr-ref').replace(/\s+/g, '');
+    setFieldError('apr-channel', g('apr-channel') ? '' : 'Choose how the member paid.');
+    setFieldError('apr-ref', /^[A-Za-z0-9-]{6,40}$/.test(ref) ? '' : 'Enter the receipt / reference number (6–40 letters or numbers).');
+    if (!g('apr-channel') || !/^[A-Za-z0-9-]{6,40}$/.test(ref)) return;
+  }
+  if (mode === 'reject') {
+    setFieldError('apr-reason', g('apr-reason') ? '' : 'Tell the member what to fix.');
+    if (!g('apr-reason')) return;
+  }
+  const btn = document.getElementById('apr-go'); btn.disabled = true;
+  try {
+    if (mode === 'reject') {
+      await rpc('admin_reject_payment', { p_registration: p.registration_id, p_reason: g('apr-reason') });
+      showToast(`Payment from ${p.member || p.email} rejected. They can resubmit it.`, 'error', 4500);
+    } else {
+      await rpc('admin_confirm_payment', { p_registration: p.registration_id, p_channel: mode === 'mark' ? g('apr-channel') : null, p_reference: mode === 'mark' ? g('apr-ref') : null });
+      showToast(`✓ Payment confirmed — ${p.member || p.email} can now join "${p.session}".`, 'success', 4500);
+    }
+    closeMo('a-pay-review-mo');
+    await loadAdminData();
+  } catch (e) {
+    err.textContent = friendlyAuthError(e); err.style.display = 'block';
+  } finally { btn.disabled = false; }
 }
 
 // ════════════════════════════════════════════════
@@ -2349,6 +2480,40 @@ async function loadMemberPayments() {
   updateMemberBadges();
 }
 function mp() { return memberPayments || { transactions: [], registrations: [] }; }
+// Where members send their payment. Fill these in with HR Calabarzon's real accounts.
+// Example: { method: 'GCash', name: 'HR Calabarzon', number: '0917 123 4567' }
+const PAYMENT_ACCOUNTS = [];
+let payingSessionId = null;
+function openSubmitPayment(sessionId) {
+  const r = (mp().registrations || []).find(x => x.session_id === sessionId);
+  const s = r || (md().upcoming || []).find(x => x.session_id === sessionId);
+  if (!s) { showToast('Register for the session first.', 'info'); return; }
+  payingSessionId = sessionId;
+  setHtml('msp-summary', `<div style="font-family:var(--font-h);font-weight:700;">${esc(s.session || s.title)}</div><div style="color:var(--t2);">${fmtDate(s.start)} · ${fmtTime(s.start)}</div><div style="font-size:20px;font-weight:800;margin-top:6px;">${fmtMoney(s.fee)}</div>`);
+  setHtml('msp-accounts', PAYMENT_ACCOUNTS.length
+    ? `<div style="font-size:12px;color:var(--t3);margin-bottom:5px;">Send the exact amount to:</div>` + PAYMENT_ACCOUNTS.map(a => `<div style="display:flex;justify-content:space-between;gap:8px;padding:7px 10px;background:var(--bg);border-radius:var(--r2);margin-bottom:5px;"><span><strong>${esc(a.method)}</strong> · ${esc(a.name || '')}</span><strong>${esc(a.number || '')}</strong></div>`).join('')
+    : `<div style="font-size:12px;color:var(--t2);">Pay using the GCash / Maya / bank details HR Calabarzon gave you, then enter the reference number below.</div>`);
+  ['msp-channel', 'msp-ref'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; setFieldError(id, ''); });
+  if (r?.pending_reference) document.getElementById('msp-ref').value = r.pending_reference;
+  document.getElementById('msp-err').style.display = 'none';
+  openMo('m-submit-payment');
+}
+async function submitMemberPayment() {
+  const ch = document.getElementById('msp-channel').value, ref = document.getElementById('msp-ref').value.trim().replace(/\s+/g, '');
+  setFieldError('msp-channel', ch ? '' : 'Choose how you paid.');
+  setFieldError('msp-ref', !ref ? 'Enter the reference number from your receipt.' : /^[A-Za-z0-9-]{6,40}$/.test(ref) ? '' : 'The reference number should be 6–40 letters or numbers, exactly as on your receipt.');
+  if (!ch || !/^[A-Za-z0-9-]{6,40}$/.test(ref)) return;
+  const btn = document.getElementById('msp-go'); btn.disabled = true;
+  const err = document.getElementById('msp-err'); err.style.display = 'none';
+  try {
+    await rpc('member_submit_payment', { p_session: payingSessionId, p_channel: ch, p_reference: ref });
+    closeMo('m-submit-payment');
+    showToast('Payment sent for confirmation. Your Zoom link unlocks once an admin confirms it.', 'success', 5000);
+    await Promise.all([loadMemberPayments(), loadMemberData()]);
+  } catch (e) {
+    err.textContent = friendlyAuthError(e); err.style.display = 'block';
+  } finally { btn.disabled = false; }
+}
 function memberDues() {
   return (mp().registrations || []).filter(r => ['UNPAID', 'PENDING_PAYMENT'].includes(r.payment_status)
     && r.session_status !== 'Cancelled' && Number(r.fee || 0) > 0);
@@ -2365,9 +2530,12 @@ function renderMemberPayments() {
   setText('mpay-count', loaded ? fmtInt(tx.length) : '—');
 
   setHtml('mpay-dues', dues.length ? dues.map(r => {
-    const [c, l] = REG_PAY_LABEL[r.payment_status] || ['bg-gr', r.payment_status];
-    return `<div class="m-hitem"><div class="m-hst" style="background:var(--yellow-l);color:#B45309;">₱</div><div class="m-hi"><h4>${esc(r.session)}</h4><p>${fmtDate(r.start)} · ${fmtTime(r.start)} · ${fmtMoney(r.fee)}</p></div><div class="m-ha"><span class="badge ${c}">${l}</span></div></div>`;
-  }).join('') + `<div style="font-size:12px;color:var(--t3);margin-top:10px;line-height:1.6;">Online payment isn't available on the website yet — HR Calabarzon will send you payment instructions. Your Zoom link unlocks automatically once your payment is confirmed.</div>`
+    const pending = r.payment_status === 'PENDING_PAYMENT';
+    const note = pending ? `<div style="font-size:12px;color:#B45309;margin-top:3px;">⏳ Sent${r.pending_reference ? ` (Ref ${esc(r.pending_reference)})` : ''} — waiting for an admin to confirm.</div>`
+      : r.rejected_reason ? `<div style="font-size:12px;color:var(--red);margin-top:3px;">✗ Your last payment was not accepted: ${esc(r.rejected_reason)} — please submit it again.</div>` : '';
+    const btn = memberPayments?.fallback ? '' : `<button class="btn btn-xs ${pending ? 'btn-ghost' : 'btn-primary'}" onclick="openSubmitPayment('${esc(r.session_id)}')">${pending ? 'Edit' : 'Submit payment'}</button>`;
+    return `<div class="m-hitem"><div class="m-hst" style="background:var(--yellow-l);color:#B45309;">₱</div><div class="m-hi"><h4>${esc(r.session)}</h4><p>${fmtDate(r.start)} · ${fmtTime(r.start)} · ${fmtMoney(r.fee)}</p>${note}</div><div class="m-ha" style="display:flex;flex-direction:column;align-items:flex-end;gap:5px;"><span class="badge ${pending ? 'bg-y' : 'bg-r'}">${pending ? '⏳ Waiting for confirmation' : 'Unpaid'}</span>${btn}</div></div>`;
+  }).join('') + `<div style="font-size:12px;color:var(--t3);margin-top:10px;line-height:1.6;">Pay the admission fee, then press <strong>Submit payment</strong> and enter the reference number from your receipt. Your Zoom link unlocks as soon as an admin confirms it.</div>`
     : emptyState('✅', loaded ? 'Nothing to pay right now.' : 'Loading…'));
 
   const st = document.getElementById('mpay-status')?.value || '';
