@@ -1377,11 +1377,11 @@ function openSessionView(sessionId) {
   let footer = `<button class="btn btn-ghost" onclick="closeMo('m-session-view')">← Back</button>`;
   if (s.is_registered) {
     note.style.display = 'block'; note.style.background = 'var(--green-l)'; note.style.color = 'var(--green)';
-    note.textContent = s.zoom_join_url ? "You're registered. The Join button opens 15 minutes before the start."
+    note.textContent = zoomReady(s) ? "You're registered. The Join button opens when the session starts."
       : s.payment_status === 'PENDING_PAYMENT' ? "You're registered. Your payment is waiting for an admin to confirm it — the Zoom link unlocks after that."
       : "You're registered. Pay the admission fee and submit your reference number to unlock the Zoom link.";
-    if (!s.zoom_join_url && s.payment_status !== 'PENDING_PAYMENT' && Number(s.fee) > 0) footer += `<button class="btn btn-primary" onclick="closeMo('m-session-view');openSubmitPayment('${esc(s.session_id)}')">💳 Submit payment</button>`;
-    if (s.zoom_join_url) footer += `<button class="btn btn-primary" onclick="closeMo('m-session-view');openJoinModal('${esc(s.session_id)}')">🎯 Join options</button>`;
+    if (!zoomReady(s) && s.payment_status !== 'PENDING_PAYMENT' && Number(s.fee) > 0) footer += `<button class="btn btn-primary" onclick="closeMo('m-session-view');openSubmitPayment('${esc(s.session_id)}')">💳 Submit payment</button>`;
+    if (zoomReady(s)) footer += `<button class="btn btn-primary" onclick="closeMo('m-session-view');openJoinModal('${esc(s.session_id)}')">🎯 Join options</button>`;
   } else if (full) {
     note.style.display = 'block'; note.style.background = 'var(--red-l)'; note.style.color = 'var(--red-d)';
     note.textContent = 'This session is full.';
@@ -1402,22 +1402,40 @@ function openJoinModal(sessionId) {
   if (!s) return;
   if (!s.is_registered) { openSessionView(sessionId); return; }
   const live = sessionIsLive(s);
-  const soon = new Date(s.start) - Date.now() < 15 * 60 * 1000;
-  setHtml('m-join-body', `You're joining: <strong>${esc(s.title)}</strong> with ${esc(s.speaker)}<br><br>📅 ${fmtDate(s.start)} · ${fmtTime(s.start)} · ${esc(s.duration)} min${s.zoom_passcode ? `<br>🔑 Passcode: <strong>${esc(s.zoom_passcode)}</strong>` : ''}<br><br>Your attendance is recorded from Zoom automatically.`);
+  setHtml('m-join-body', `You're joining: <strong>${esc(s.title)}</strong> with ${esc(s.speaker)}<br><br>📅 ${fmtDate(s.start)} · ${fmtTime(s.start)} · ${esc(s.duration)} min<br><br>You may wait in the Zoom waiting room until the host lets you in. Your attendance is recorded from Zoom automatically.`);
   let footer;
   if (!s.is_registered) footer = `<button class="btn btn-primary" onclick="closeMo('m-join-modal');registerForSession('${esc(s.session_id)}')">+ Register</button>`;
-  else if (!s.zoom_join_url && s.payment_status === 'PENDING_PAYMENT') footer = `<span class="badge bg-y">⏳ Payment sent — waiting for confirmation</span>`;
-  else if (!s.zoom_join_url && Number(s.fee) > 0) footer = `<button class="btn btn-primary" onclick="closeMo('m-join-modal');openSubmitPayment('${esc(s.session_id)}')">💳 Submit payment to unlock Zoom</button>`;
-  else if (!s.zoom_join_url) footer = `<span class="badge bg-y">⏳ The Zoom link isn't ready yet</span>`;
-  else if (live || soon) footer = `<button class="btn btn-primary" onclick="handleJoinSession('${esc(s.session_id)}')">🚀 Join Now</button>`;
-  else footer = `<span class="badge bg-b">The Join button opens 15 minutes before the start</span>`;
+  else if (!zoomReady(s) && s.payment_status === 'PENDING_PAYMENT') footer = `<span class="badge bg-y">⏳ Payment sent — waiting for confirmation</span>`;
+  else if (!zoomReady(s) && Number(s.fee) > 0) footer = `<button class="btn btn-primary" onclick="closeMo('m-join-modal');openSubmitPayment('${esc(s.session_id)}')">💳 Submit payment to unlock Zoom</button>`;
+  else if (!zoomReady(s)) footer = `<span class="badge bg-y">⏳ The Zoom link isn't ready yet</span>`;
+  else if (live) footer = `<button class="btn btn-primary" onclick="handleJoinSession('${esc(s.session_id)}', this)">🚀 Join Now</button>`;
+  else footer = `<span class="badge bg-b">🔒 Join opens at ${fmtTime(s.start)}, when the session starts</span>`;
   setHtml('m-join-footer', footer + `<button class="btn btn-ghost" onclick="closeMo('m-join-modal')">Close</button>`);
   openMo('m-join-modal');
 }
-function handleJoinSession(sessionId) {
+// The Zoom link stays on the server until the start time (15_join_lock.sql);
+// it is only handed out when the member presses Join during the session.
+function zoomReady(s) { return s.zoom_ready !== undefined ? !!s.zoom_ready : !!s.zoom_join_url; }
+async function handleJoinSession(sessionId, btn) {
   const s = (md().upcoming || []).find(x => x.session_id === sessionId);
-  if (!s || !s.zoom_join_url) { showToast('The Zoom link is not available yet.', 'info'); return; }
-  window.open(s.zoom_join_url, '_blank', 'noopener');
+  if (!s || !zoomReady(s)) { showToast('The Zoom link is not available yet.', 'info'); return; }
+  if (Date.now() < new Date(s.start).getTime()) { showToast(`This session hasn't started yet. You can join at ${fmtTime(s.start)}.`, 'info', 5000); return; }
+  let url = s.zoom_join_url;                               // only present if 15_join_lock.sql hasn't been run
+  if (!url) {
+    const tab = window.open('', '_blank');                 // open first — browsers block tabs opened after waiting
+    if (tab) { try { tab.document.write('<p style="font-family:sans-serif;padding:24px;">Opening Zoom…</p>'); } catch (_) { /* ignore */ } }
+    if (btn) btn.disabled = true;
+    try {
+      const r = await rpc('member_join_link', { p_session: sessionId });
+      url = r && r.url;
+      if (!/^https:\/\//i.test(url || '')) throw new Error('The Zoom link for this session is not valid. Please tell the admin.');
+      if (tab) tab.location.href = url; else window.location.href = url;
+    } catch (e) {
+      if (tab) tab.close();
+      showToast(friendlyAuthError(e), 'error', 6000);
+      return;
+    } finally { if (btn) btn.disabled = false; }
+  } else window.open(url, '_blank', 'noopener');
   closeMo('m-join-modal');
 }
 function stopCountdown() {
@@ -1434,14 +1452,12 @@ function startCountdown() {
     const h = Math.floor(left / 3600), m = Math.floor((left % 3600) / 60), sec = left % 60;
     const f = n => String(n).padStart(2, '0');
     [['m-hh', 'm-ah', h > 99 ? '99+' : f(h)], ['m-hm', 'm-am', f(m)], ['m-hs', 'm-as', f(sec)]].forEach(([a, b, v]) => { setText(a, v); setText(b, v); });
-    const soon = start - now < 15 * 60 * 1000 && now < end;
     ['m-join-home', 'm-join-att'].forEach(id => {
       const el = document.getElementById(id); if (!el) return;
       if (now >= end) { el.className = 'btn btn-disabled btn-sm'; el.textContent = 'Session ended'; }
       else if (!s.is_registered) { el.className = 'btn btn-outline btn-sm'; el.textContent = '👁 View session'; }
       else if (now >= start) { el.className = 'btn btn-red btn-sm'; el.textContent = '🔴 Join Now — LIVE!'; }
-      else if (soon) { el.className = 'btn btn-primary btn-sm'; el.textContent = 'Join Now'; }
-      else { el.className = 'btn btn-disabled btn-sm'; el.textContent = 'Join Now (Soon)'; }
+      else { el.className = 'btn btn-disabled btn-sm'; el.textContent = '🔒 Join opens at start'; }
     });
     if (now >= end) stopCountdown();
   };
@@ -1646,6 +1662,8 @@ function handleViewMember(userId) {
   openMo('a-member-detail');
 }
 let aSessionQuery = '';
+const PAST_PAGE = 10;           // past sessions shown at a time (most recent first)
+let aPastShown = PAST_PAGE;
 function sessionMatches(s, q) {
   return [s.title, s.speaker, s.area, s.type].some(v => String(v || '').toLowerCase().includes(q));
 }
@@ -1676,12 +1694,15 @@ function handleAdminSearch(query) {
 function clearSessionSearch() {
   aSessionQuery = '';
   const top = document.getElementById('a-search-input'); if (top) top.value = '';
+  aPastShown = PAST_PAGE;
   ['a-sess-search', 'a-sess-area', 'a-sess-from', 'a-sess-to'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
   const per = document.getElementById('a-sess-period'); if (per) per.value = '';
   const sort = document.getElementById('a-sess-sort'); if (sort) sort.value = 'recent';
   renderSessions();
 }
-function onSessionSearchInput(v) { aSessionQuery = v; renderSessions(); }
+function onSessionSearchInput(v) { aSessionQuery = v; aPastShown = PAST_PAGE; renderSessions(); }
+function onSessionFilterChange() { aPastShown = PAST_PAGE; renderSessions(); }
+function showMorePastSessions() { aPastShown += PAST_PAGE; renderSessions(); }
 // Date window of the "When" filter (Manila days), like a transaction-history filter
 function sessionPeriodRange() {
   const per = document.getElementById('a-sess-period')?.value || '';
@@ -1757,7 +1778,13 @@ function renderSessions() {
       <div class="prog" style="margin-top:7px;"><div class="prog-f" style="width:${Math.min(cap, 100)}%;background:var(--blue);"></div></div><div style="font-size:11px;color:var(--t3);margin-top:3px;">${cap}% capacity</div></div>`;
   }).join('') : `<div style="grid-column:1/-1;">${emptyState('📅', filtering ? 'No upcoming sessions match your filters.' : 'No upcoming sessions. Click "+ Create New Session" to add one.')}</div>`);
 
-  setHtml('a-sess-past', past.length ? past.map(s => {
+  const more = document.getElementById('a-past-more');
+  if (more) {
+    const shown = Math.min(aPastShown, past.length);
+    more.style.display = past.length ? 'flex' : 'none';
+    more.innerHTML = `<span>Showing the ${shown === past.length ? '' : shown + ' most recent of '}${past.length} past session${past.length === 1 ? '' : 's'}${filtering ? ' that match' : ''}.${shown < past.length ? ' Use the search or date range above to find an older one.' : ''}</span>${shown < past.length ? `<button class="btn btn-sm btn-ghost" onclick="showMorePastSessions()">Show ${Math.min(PAST_PAGE, past.length - shown)} more</button>` : ''}`;
+  }
+  setHtml('a-sess-past', past.length ? past.slice(0, aPastShown).map(s => {
     const cancelled = s.status === 'Cancelled';
     const synced = Number(s.log_count) > 0;
     const sync = cancelled ? '<span class="badge bg-gr">Cancelled</span>' : synced ? '<span class="badge bg-g">✓ Synced</span>' : Number(s.registered) ? '<span class="badge bg-y">⏳ Awaiting Sync</span>' : '<span class="badge bg-gr">No registrations</span>';
@@ -3222,7 +3249,7 @@ function notificationItems(role) {
     const d = md();
     const soon = (d.upcoming || []).filter(s => s.is_registered && new Date(s.start) - Date.now() < 7 * 864e5);
     if (soon.length) items.push(`${soon.length} registered session${soon.length === 1 ? '' : 's'} this week`);
-    const unpaid = (d.upcoming || []).filter(s => s.is_registered && !s.zoom_join_url && Number(s.fee) > 0);
+    const unpaid = (d.upcoming || []).filter(s => s.is_registered && !zoomReady(s) && Number(s.fee) > 0);
     if (unpaid.length) items.push(`${unpaid.length} payment${unpaid.length === 1 ? '' : 's'} pending`);
     const recent = (d.certificates || []).filter(c => Date.now() - new Date(c.issued_at) < 7 * 864e5);
     if (recent.length) items.push(`${recent.length} new certificate${recent.length === 1 ? '' : 's'}`);

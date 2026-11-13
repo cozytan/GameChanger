@@ -595,10 +595,10 @@
       <div style="display:flex;justify-content:flex-end;margin-bottom:16px;"><button class="btn btn-red" onclick="openSessionEditor()">+ Create New Session</button></div>
       <div class="fbar" style="flex-wrap:wrap;">
         <input class="fi2" id="a-sess-search" type="search" placeholder="🔎 Search sessions by title, speaker or area..." style="flex:1;min-width:220px;" oninput="onSessionSearchInput(this.value)">
-        <select class="fs2" style="width:auto;" id="a-sess-period" onchange="renderSessions()" title="When"><option value="">All dates</option><option value="today">Today</option><option value="next7">Next 7 days</option><option value="last7">Last 7 days</option><option value="last30">Last 30 days</option><option value="last90">Last 3 months</option><option value="month">This month</option><option value="lastmonth">Last month</option><option value="year">This year</option><option value="custom">Custom dates…</option></select>
-        <span id="a-sess-custom" style="display:none;align-items:center;gap:6px;"><input class="fi2" type="date" id="a-sess-from" style="width:auto;" onchange="renderSessions()" aria-label="From date"><span style="color:var(--t3);font-size:12px;">to</span><input class="fi2" type="date" id="a-sess-to" style="width:auto;" onchange="renderSessions()" aria-label="To date"></span>
-        <select class="fs2" style="width:auto;" id="a-sess-area" onchange="renderSessions()"><option value="">All Areas</option></select>
-        <select class="fs2" style="width:auto;" id="a-sess-sort" onchange="renderSessions()" title="Order"><option value="recent">Most recent first</option><option value="oldest">Oldest first</option></select>
+        <select class="fs2" style="width:auto;" id="a-sess-period" onchange="onSessionFilterChange()" title="When"><option value="">All dates</option><option value="today">Today</option><option value="next7">Next 7 days</option><option value="last7">Last 7 days</option><option value="last30">Last 30 days</option><option value="last90">Last 3 months</option><option value="month">This month</option><option value="lastmonth">Last month</option><option value="year">This year</option><option value="custom">Date range (from – to)…</option></select>
+        <span id="a-sess-custom" style="display:none;align-items:center;gap:6px;"><input class="fi2" type="date" id="a-sess-from" style="width:auto;" onchange="onSessionFilterChange()" aria-label="From date"><span style="color:var(--t3);font-size:12px;">to</span><input class="fi2" type="date" id="a-sess-to" style="width:auto;" onchange="onSessionFilterChange()" aria-label="To date"></span>
+        <select class="fs2" style="width:auto;" id="a-sess-area" onchange="onSessionFilterChange()"><option value="">All Areas</option></select>
+        <select class="fs2" style="width:auto;" id="a-sess-sort" onchange="onSessionFilterChange()" title="Order"><option value="recent">Most recent first</option><option value="oldest">Oldest first</option></select>
       </div>
       <div class="sess-filter" id="a-sess-filter" style="display:none;"></div>
       <div class="pill-tabs">
@@ -610,7 +610,7 @@
       <div id="as-upcoming" class="apanel active">
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:13px;" id="a-sess-upcoming"></div>
       </div>
-      <div id="as-past" class="apanel"><div class="card"><table class="dt"><thead><tr><th>Session</th><th>Date</th><th>Area</th><th>Attendees</th><th>Certs</th><th>Revenue</th><th>Attendance Sync</th><th>Actions</th></tr></thead><tbody id="a-sess-past"></tbody></table></div></div>
+      <div id="as-past" class="apanel"><div class="card"><table class="dt"><thead><tr><th>Session</th><th>Date</th><th>Area</th><th>Attendees</th><th>Certs</th><th>Revenue</th><th>Attendance Sync</th><th>Actions</th></tr></thead><tbody id="a-sess-past"></tbody></table></div><div id="a-past-more" style="display:none;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-top:10px;font-size:12px;color:var(--t3);"></div></div>
       <div id="as-draft" class="apanel"><div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:13px;" id="a-sess-drafts"></div></div>
       <div id="as-sync" class="apanel">
         <!-- Zoom attendance rows are stored in the attendance_logs table (imported
