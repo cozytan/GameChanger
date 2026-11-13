@@ -448,3 +448,5 @@ tr.is-archived td{opacity:.6;}
 .rep-msg.is-empty{background:var(--yellow-l);color:#8A4B00;}
 .btn:disabled{opacity:.45;cursor:not-allowed;pointer-events:auto;}
 .sess-filter{align-items:center;justify-content:space-between;gap:10px;margin-bottom:12px;padding:9px 13px;background:var(--blue-l);color:var(--t1);border-radius:var(--r2);font-size:13px;}
+
+.sess-filter.is-error{background:var(--red-l);color:var(--red-d);}

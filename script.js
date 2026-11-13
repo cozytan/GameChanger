@@ -37,6 +37,13 @@ const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBh
 //   Authentication → URL Configuration → Redirect URLs
 // (index.html is dropped so every page address gives the same link)
 const APP_URL = window.location.origin + window.location.pathname.replace(/index\.html$/i, '');
+// The address put in confirmation / password-reset emails. Emails are often opened on a
+// phone, so a link to localhost or 127.0.0.1 (a developer's own computer) would not open.
+// When the site runs anywhere local, email links point to the public site instead.
+// This address must also be listed in Supabase → Authentication → URL Configuration.
+const PUBLIC_SITE_URL = 'https://cozytan.github.io/GameChanger/';
+const EMAIL_LINK_URL = /^https:$/.test(window.location.protocol) && !/^(localhost|127\.|0\.0\.0\.0|\[::1\])/.test(window.location.hostname)
+  ? APP_URL : PUBLIC_SITE_URL;
 
 // Read the URL BEFORE the Supabase client consumes it, so we know whether the
 // user just clicked a "reset password" or "confirm email" link.
@@ -385,7 +392,7 @@ async function resendConfirmation() {
   const { error } = await sb.auth.resend({
     type: 'signup',
     email: pendingConfirmEmail,
-    options: { emailRedirectTo: APP_URL }
+    options: { emailRedirectTo: EMAIL_LINK_URL }
   });
   if (error) showLoginErr(friendlyAuthError(error));
   else showToast(`Confirmation email re-sent to ${pendingConfirmEmail}.`, 'success', 5000);
@@ -560,7 +567,7 @@ async function sendResetLink() {
       return;
     }
 
-    const { error } = await sb.auth.resetPasswordForEmail(target.email, { redirectTo: APP_URL });
+    const { error } = await sb.auth.resetPasswordForEmail(target.email, { redirectTo: EMAIL_LINK_URL });
     if (error) { showFpMsg(friendlyAuthError(error), false); return; }
 
     sent = true;
@@ -661,7 +668,7 @@ async function handleRegister() {
       email,
       password: pass,
       options: {
-        emailRedirectTo: APP_URL,
+        emailRedirectTo: EMAIL_LINK_URL,
         data: { full_name: fullName, province, company, department, position }
       }
     });
@@ -1302,7 +1309,7 @@ async function saveProfile() {
       } else {
         const check = await validateEmail(newEmail, { checkDuplicate: true });
         if (!check.ok) throw new Error(check.msg);
-        const { error } = await sb.auth.updateUser({ email: newEmail }, { emailRedirectTo: APP_URL });
+        const { error } = await sb.auth.updateUser({ email: newEmail }, { emailRedirectTo: EMAIL_LINK_URL });
         if (error) throw error;
         showToast(`To finish, open the confirmation link sent to ${newEmail} (a notice may also go to your current email). Until then, keep using ${oldEmail}.`, 'info', 9000);
       }
@@ -1476,6 +1483,7 @@ async function loadAdminData() {
     console.error('[Supabase] member management failed — did you run 06_member_management.sql?', who.reason || list.reason);
   }
   renderAdminAll();
+  autoSyncAttendance();          // fetch Zoom attendance of finished sessions in the background
 }
 function isSuperAdmin() { return !!(adminMe && adminMe.is_super); }
 // Rows for the Data Management table (06 list if available, else the dashboard list)
@@ -1530,6 +1538,7 @@ function fillAdminSelects() {
   fill('a-mem-province', d.provinces || [], 'All Provinces');
   fill('a-mem-level', ['Entry', 'Mid', 'Master'], 'All Levels');
   fill('acs-area', d.areas || [], null);
+  fill('a-sess-area', d.areas || [], 'All Areas');
   fillReportSelects();
   const roleSel = document.getElementById('a-mem-role'); if (roleSel) roleSel.style.display = isSuperAdmin() ? '' : 'none';
   const withRegs = (d.sessions || []).filter(s => Number(s.registered) > 0);
@@ -1665,24 +1674,67 @@ function handleAdminSearch(query) {
   renderMembersTable();
 }
 function clearSessionSearch() {
-  if (!aSessionQuery) return;
   aSessionQuery = '';
   const top = document.getElementById('a-search-input'); if (top) top.value = '';
+  ['a-sess-search', 'a-sess-area', 'a-sess-from', 'a-sess-to'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
+  const per = document.getElementById('a-sess-period'); if (per) per.value = '';
+  const sort = document.getElementById('a-sess-sort'); if (sort) sort.value = 'recent';
   renderSessions();
+}
+function onSessionSearchInput(v) { aSessionQuery = v; renderSessions(); }
+// Date window of the "When" filter (Manila days), like a transaction-history filter
+function sessionPeriodRange() {
+  const per = document.getElementById('a-sess-period')?.value || '';
+  const custom = document.getElementById('a-sess-custom'); if (custom) custom.style.display = per === 'custom' ? 'flex' : 'none';
+  if (!per) return { from: null, to: null };
+  const today = manilaParts(new Date().toISOString()).date;                 // YYYY-MM-DD
+  const day = (d, end) => new Date(`${d}T${end ? '23:59:59' : '00:00:00'}+08:00`);
+  const shift = n => manilaParts(new Date(day(today).getTime() + n * 864e5 + 432e5).toISOString()).date;
+  const [y, m] = today.split('-').map(Number);
+  const pad = n => String(n).padStart(2, '0');
+  const monthEnd = (yy, mm) => pad(new Date(Date.UTC(yy, mm, 0)).getUTCDate());
+  switch (per) {
+    case 'today': return { from: day(today), to: day(today, true) };
+    case 'next7': return { from: day(today), to: day(shift(7), true) };
+    case 'last7': return { from: day(shift(-7)), to: day(today, true) };
+    case 'last30': return { from: day(shift(-30)), to: day(today, true) };
+    case 'last90': return { from: day(shift(-90)), to: day(today, true) };
+    case 'month': return { from: day(`${y}-${pad(m)}-01`), to: day(`${y}-${pad(m)}-${monthEnd(y, m)}`, true) };
+    case 'lastmonth': { const yy = m === 1 ? y - 1 : y, mm = m === 1 ? 12 : m - 1; return { from: day(`${yy}-${pad(mm)}-01`), to: day(`${yy}-${pad(mm)}-${monthEnd(yy, mm)}`, true) }; }
+    case 'year': return { from: day(`${y}-01-01`), to: day(`${y}-12-31`, true) };
+    case 'custom': {
+      const f = document.getElementById('a-sess-from')?.value, t = document.getElementById('a-sess-to')?.value;
+      const r = { from: f ? day(f) : null, to: t ? day(t, true) : null };
+      if (r.from && r.to && r.from > r.to) r.error = 'The From date is later than the To date. Correct the dates to see sessions.';
+      return r;
+    }
+  }
+  return { from: null, to: null };
 }
 
 // ── Sessions ──
 function renderSessions() {
   const sq = aSessionQuery.trim().toLowerCase();
-  const all = (ad().sessions || []).filter(s => !sq || sessionMatches(s, sq));
-  const upcoming = all.filter(isUpcomingSession).sort((a, b) => new Date(a.start) - new Date(b.start));
-  const past = all.filter(isPastSession);
-  const drafts = all.filter(s => s.status === 'Draft');
+  const box = document.getElementById('a-sess-search'); if (box && box.value !== aSessionQuery && document.activeElement !== box) box.value = aSessionQuery;
+  const area = document.getElementById('a-sess-area')?.value || '';
+  const sortDir = document.getElementById('a-sess-sort')?.value || 'recent';
+  const range = sessionPeriodRange();
+  const inRange = s => { const d = new Date(s.start); return !range.error && (!range.from || d >= range.from) && (!range.to || d <= range.to); };
+  const all = (ad().sessions || []).filter(s => (!sq || sessionMatches(s, sq)) && (!area || s.area === area) && inRange(s));
+  const byDate = (a, b) => new Date(a.start) - new Date(b.start);
+  // "Most recent first" = nearest to today first: soonest upcoming, latest past
+  const upcoming = all.filter(isUpcomingSession).sort(sortDir === 'oldest' ? (a, b) => byDate(b, a) : byDate);
+  const past = all.filter(isPastSession).sort(sortDir === 'oldest' ? byDate : (a, b) => byDate(b, a));
+  const drafts = all.filter(s => s.status === 'Draft').sort(sortDir === 'oldest' ? byDate : (a, b) => byDate(b, a));
+  const filtering = !!(sq || area || range.from || range.to || range.error);
+  ['a-sess-from', 'a-sess-to'].forEach(id => document.getElementById(id)?.classList.toggle('is-invalid', !!range.error));
   const chip = document.getElementById('a-sess-filter');
   if (chip) {
-    chip.style.display = sq ? 'flex' : 'none';
-    if (sq) {
-      chip.innerHTML = `<span>🔎 Sessions matching “<strong>${esc(aSessionQuery)}</strong>” — ${all.length} found (${upcoming.length} upcoming · ${past.length} past · ${drafts.length} draft${drafts.length === 1 ? '' : 's'})</span><button class="btn btn-xs btn-ghost" onclick="clearSessionSearch()">✕ Clear</button>`;
+    chip.style.display = filtering ? 'flex' : 'none';
+    chip.classList.toggle('is-error', !!range.error);
+    if (range.error) chip.innerHTML = `<span>⚠ ${esc(range.error)}</span><button class="btn btn-xs btn-ghost" onclick="clearSessionSearch()">✕ Clear filters</button>`;
+    else if (filtering) {
+      chip.innerHTML = `<span>🔎 ${all.length} session${all.length === 1 ? '' : 's'} found${sq ? ` for “<strong>${esc(aSessionQuery)}</strong>”` : ''} — ${upcoming.length} upcoming · ${past.length} past · ${drafts.length} draft${drafts.length === 1 ? '' : 's'}</span><button class="btn btn-xs btn-ghost" onclick="clearSessionSearch()">✕ Clear filters</button>`;
       // jump to the first tab that has a match
       const cur = document.querySelector('#ap-sessions .apanel.active')?.id;
       const has = { 'as-upcoming': upcoming.length, 'as-past': past.length, 'as-draft': drafts.length };
@@ -1700,10 +1752,10 @@ function renderSessions() {
     const cap = Number(s.capacity) ? Math.round(100 * Number(s.registered) / Number(s.capacity)) : 0;
     return `<div class="card cp" style="border-left:4px solid ${live || soon ? 'var(--red)' : 'var(--blue)'};"><div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:9px;">${live ? '<span class="badge bg-r">🔴 Live now</span>' : soon ? '<span class="badge bg-r">🔴 Live Soon</span>' : '<span class="badge bg-b">📅 Upcoming</span>'}<div style="display:flex;gap:5px;"><button class="btn btn-xs btn-ghost" onclick="openSessionEditor('${esc(s.session_id)}')">✏️ Edit</button><button class="btn btn-xs btn-danger" onclick="handleCancelSession('${esc(s.session_id)}')">Cancel</button></div></div>
       <div style="font-family:var(--font-h);font-size:14px;font-weight:700;margin-bottom:7px;">${esc(s.title)}</div>
-      <div style="font-size:12px;color:var(--t2);display:flex;flex-direction:column;gap:3px;"><div>📅 ${fmtDate(s.start)} · ${fmtTime(s.start)} · ${esc(s.duration)} min</div><div>👤 ${esc(s.speaker)} · ${esc(areaStyle(s.area).short)}</div>${s.zoom_join_url ? `<div>🔗 <span style="color:var(--blue);cursor:pointer;" onclick="copyZoomLink('${esc(s.session_id)}')">${esc(String(s.zoom_join_url).replace(/^https?:\/\//, ''))}</span></div>` : `<div style="color:#B45309;display:flex;align-items:center;gap:6px;">🔗 No Zoom link yet <button class="btn btn-xs btn-ghost" onclick="generateZoomLink('${esc(s.session_id)}', this)">🎥 Generate</button></div>`}<div>💳 ${Number(s.fee) > 0 ? fmtMoney(s.fee) + ' admission fee' : 'Free session'}</div></div>
+      <div style="font-size:12px;color:var(--t2);display:flex;flex-direction:column;gap:3px;"><div>📅 ${fmtDate(s.start)} · ${fmtTime(s.start)} · ${esc(s.duration)} min</div><div>👤 ${esc(s.speaker)} · ${esc(areaStyle(s.area).short)}</div>${s.zoom_join_url ? `<div>🔗 <span style="color:var(--blue);cursor:pointer;" onclick="copyZoomLink('${esc(s.session_id)}')">${esc(String(s.zoom_join_url).replace(/^https?:\/\//, ''))}</span> <button class="btn btn-xs btn-primary" style="margin-left:4px;" title="Opens Zoom and starts the meeting as host" onclick="startZoomAsHost('${esc(s.session_id)}', this)">▶ ${live ? 'Join now' : 'Start Zoom'}</button></div>` : `<div style="color:#B45309;display:flex;align-items:center;gap:6px;">🔗 No Zoom link yet <button class="btn btn-xs btn-ghost" onclick="generateZoomLink('${esc(s.session_id)}', this)">🎥 Generate</button></div>`}<div>💳 ${Number(s.fee) > 0 ? fmtMoney(s.fee) + ' admission fee' : 'Free session'}</div></div>
       <div style="display:flex;gap:14px;margin-top:11px;">${[['Registered', s.registered, 'var(--blue)'], ['Paid', s.paid, 'var(--green)'], ['Pending Pay', s.pending_pay, 'var(--yellow)'], ['Capacity', s.capacity, 'var(--red)']].map(([l, v, c]) => `<div style="text-align:center;"><div style="font-family:var(--font-h);font-size:18px;font-weight:800;color:${c};">${fmtInt(v)}</div><div style="font-size:11px;color:var(--t3);">${l}</div></div>`).join('')}</div>
       <div class="prog" style="margin-top:7px;"><div class="prog-f" style="width:${Math.min(cap, 100)}%;background:var(--blue);"></div></div><div style="font-size:11px;color:var(--t3);margin-top:3px;">${cap}% capacity</div></div>`;
-  }).join('') : `<div style="grid-column:1/-1;">${emptyState('📅', sq ? 'No upcoming sessions match your search.' : 'No upcoming sessions. Click "+ Create New Session" to add one.')}</div>`);
+  }).join('') : `<div style="grid-column:1/-1;">${emptyState('📅', filtering ? 'No upcoming sessions match your filters.' : 'No upcoming sessions. Click "+ Create New Session" to add one.')}</div>`);
 
   setHtml('a-sess-past', past.length ? past.map(s => {
     const cancelled = s.status === 'Cancelled';
@@ -1711,11 +1763,11 @@ function renderSessions() {
     const sync = cancelled ? '<span class="badge bg-gr">Cancelled</span>' : synced ? '<span class="badge bg-g">✓ Synced</span>' : Number(s.registered) ? '<span class="badge bg-y">⏳ Awaiting Sync</span>' : '<span class="badge bg-gr">No registrations</span>';
     const action = cancelled ? '—' : `<button class="btn btn-xs ${synced ? 'btn-ghost' : 'btn-red'}" onclick="goToAttendance('${esc(s.session_id)}')">${synced ? 'View Certs' : 'Sync Now'}</button>`;
     return `<tr><td class="nc">${esc(s.title)}</td><td>${fmtDateShort(s.start)}</td><td>${areaBadge(s.area)}</td><td>${fmtInt(s.attended)}/${fmtInt(s.registered)}</td><td><span class="badge ${Number(s.certs) ? 'bg-g' : 'bg-y'}">${Number(s.certs) ? fmtInt(s.certs) : 'None'}</span></td><td>${fmtMoney(s.revenue)}</td><td>${sync}</td><td>${action}</td></tr>`;
-  }).join('') : emptyRow(8, sq ? 'No past sessions match your search.' : 'No past sessions yet.'));
+  }).join('') : emptyRow(8, filtering ? 'No past sessions match your filters.' : 'No past sessions yet.'));
 
   setHtml('a-sess-drafts', drafts.length ? drafts.map(s => `
     <div class="card cp" style="border:2px dashed var(--border);"><span class="badge bg-gr" style="margin-bottom:9px;">Draft</span><div style="font-family:var(--font-h);font-size:14px;font-weight:700;margin-bottom:5px;">${esc(s.title)}</div><div style="font-size:12px;color:var(--t3);margin-bottom:11px;">Created ${fmtDate(s.created_at)} · planned for ${fmtDate(s.start)}</div><div style="display:flex;gap:7px;flex-wrap:wrap;"><button class="btn btn-sm btn-red" onclick="openSessionEditor('${esc(s.session_id)}')">Continue Editing</button><button class="btn btn-sm btn-ghost" onclick="publishDraft('${esc(s.session_id)}')">Publish</button><button class="btn btn-sm btn-danger" onclick="handleDeleteDraft('${esc(s.session_id)}')">Delete</button></div></div>`).join('')
-    : `<div style="grid-column:1/-1;">${emptyState('📝', sq ? 'No drafts match your search.' : 'No drafts.')}</div>`);
+    : `<div style="grid-column:1/-1;">${emptyState('📝', filtering ? 'No drafts match your filters.' : 'No drafts.')}</div>`);
 }
 function goToAttendance(sessionId) {
   const s = (ad().sessions || []).find(x => x.session_id === sessionId);
@@ -1785,7 +1837,10 @@ let zoomStatusCache = null;          // { ok, reason, at }
 async function zoomConnectionStatus(force) {
   if (!force && zoomStatusCache && Date.now() - zoomStatusCache.at < 300000) return zoomStatusCache;
   const z = await zoomCall('status');
-  zoomStatusCache = { ok: z.ok, reason: z.reason || '', code: z.code || '', at: Date.now() };
+  const missing = z.ok ? (z.data.missing || []) : [];
+  const cantCreate = missing.find(m => m.key === 'create');
+  zoomStatusCache = { ok: z.ok && !cantCreate, missing, code: z.code || '', at: Date.now(),
+    reason: !z.ok ? (z.reason || '') : cantCreate ? `Your Zoom app is not allowed to create meetings. In Zoom Marketplace → your app → Scopes, add: ${missing.map(m => m.add).join(', ')} — then activate the app again.` : '' };
   return zoomStatusCache;
 }
 // Creates/updates the Zoom meeting of a session and tells the admin what happened
@@ -1794,8 +1849,24 @@ async function ensureZoomMeeting(sessionId, title, force) {
   if (z.ok && z.data.status === 'created') showToast(`🎥 Zoom meeting created for "${title}" — the link is on the session card.`, 'success', 4500);
   else if (z.ok && z.data.status === 'updated') showToast('🎥 Zoom meeting updated to match the session.', 'success', 3500);
   else if (!z.ok) showToast(`The session is saved, but the Zoom link could not be generated. ${z.reason}`, 'error', 10000);
-  if (zoomStatusCache) zoomStatusCache = { ok: z.ok, reason: z.reason || '', code: z.code || '', at: Date.now() };
+  if (!z.ok) zoomStatusCache = null;       // re-check the connection next time
   return z;
+}
+// "Start Zoom" button: opens the meeting as host, no copy-pasting the link
+async function startZoomAsHost(sessionId, btn) {
+  const s = (ad().sessions || []).find(x => x.session_id === sessionId); if (!s || !s.zoom_join_url) return;
+  // open the tab right away (browsers block tabs opened after waiting), then point it at Zoom
+  const tab = window.open('', '_blank');
+  if (tab) { try { tab.document.write('<p style="font-family:sans-serif;padding:24px;">Opening Zoom…</p>'); } catch (_) { /* ignore */ } }
+  const orig = btn ? btn.textContent : '';
+  if (btn) { btn.disabled = true; btn.textContent = '⏳ Opening…'; }
+  const z = await zoomCall('host_link', sessionId);
+  const url = z.ok && z.data.url ? z.data.url : s.zoom_join_url;
+  if (btn) { btn.disabled = false; btn.textContent = orig; }
+  if (!/^https:\/\//i.test(url)) { if (tab) tab.close(); showToast('This session\'s Zoom link is not valid. Open Edit and click Regenerate.', 'error', 6000); return; }
+  if (tab) tab.location.href = url; else window.location.href = url;
+  if (!(z.ok && z.data.status === 'host')) showToast('Opened the join link. To be the host, sign in to Zoom with the account that owns the meeting.', 'info', 6000);
+  logAdminAction('Opened Zoom meeting', s.title, { session_id: sessionId });
 }
 // "Generate Zoom link" button (session card + editor)
 async function generateZoomLink(sessionId, btn) {
@@ -1815,12 +1886,13 @@ async function generateZoomLink(sessionId, btn) {
 async function renderZoomFieldStatus(s) {
   const box = document.getElementById('acs-zoom-status'); if (!box) return;
   const gen = s ? `<button type="button" class="btn btn-xs btn-ghost" onclick="generateZoomLink('${esc(s.session_id)}', this)">${s.zoom_join_url ? '⟳ Regenerate' : '🎥 Generate Zoom link'}</button>` : '';
-  if (s && s.zoom_join_url) { box.innerHTML = `<span style="color:var(--green);">✓ Zoom meeting ready.</span> ${gen}`; return; }
+  if (s && s.zoom_join_url) { box.innerHTML = `<span style="color:var(--green);">✓ Zoom meeting ready.</span> <button type="button" class="btn btn-xs btn-primary" onclick="startZoomAsHost('${esc(s.session_id)}', this)">▶ Start Zoom</button> ${gen}`; return; }
   box.innerHTML = '<span style="color:var(--t3);">Checking the Zoom connection…</span>';
   const st = await zoomConnectionStatus();
   if (box !== document.getElementById('acs-zoom-status')) return;
+  const warn = st.ok && st.missing && st.missing.length ? `<div style="flex-basis:100%;color:#B45309;">⚠ Still missing in your Zoom app (Scopes): ${st.missing.map(m => `${esc(m.label)} → <code>${esc(m.add)}</code>`).join('; ')}</div>` : '';
   box.innerHTML = st.ok
-    ? `<span style="color:var(--green);">✓ Zoom is connected.</span> <span style="color:var(--t3);">The meeting link is generated automatically when you save.</span> ${gen}`
+    ? `<span style="color:var(--green);">✓ Zoom is connected.</span> <span style="color:var(--t3);">The meeting link is generated automatically when you save.</span> ${gen}${warn}`
     : `<span style="color:var(--red);">⚠ Zoom is not connected, so the link can't be generated yet.</span> <span style="color:var(--t2);">${esc(st.reason)}</span> ${gen}`;
 }
 // Creates/updates the Zoom meeting of a published session and tells the admin what happened
@@ -2452,7 +2524,7 @@ function renderAdminProfile() {
 async function sendMyPasswordReset() {
   const email = adminMe?.email || loggedInUser?.email;
   if (!email) return;
-  const { error } = await sb.auth.resetPasswordForEmail(email, { redirectTo: APP_URL });
+  const { error } = await sb.auth.resetPasswordForEmail(email, { redirectTo: EMAIL_LINK_URL });
   if (error) showToast(friendlyAuthError(error), 'error', 6000);
   else showToast(`A password reset link was sent to ${email}.`, 'success', 5000);
 }
@@ -2982,6 +3054,37 @@ async function printAnalyticsReport() {
   logAdminAction('Printed analytics report', S.label);
 }
 
+// ── Attendance goes into Supabase automatically ──
+// When an admin has the site open, every finished session that has a Zoom meeting but no
+// attendance yet is fetched from Zoom and saved (attendance_logs), then matched to the
+// registrations. Zoom needs a few minutes after a meeting ends, so it retries every 10 minutes.
+const autoSyncTried = {};
+let autoSyncBusy = false;
+async function autoSyncAttendance() {
+  if (autoSyncBusy || currentRole !== 'admin' || !adminData) return;
+  const now = Date.now();
+  const due = (ad().sessions || []).filter(s => s.zoom_join_url && s.status !== 'Draft' && s.status !== 'Cancelled'
+    && Number(s.registered) > 0 && !Number(s.log_count)
+    && new Date(s.end).getTime() + 5 * 60000 < now && now - new Date(s.end).getTime() < 30 * 864e5
+    && (!autoSyncTried[s.session_id] || now - autoSyncTried[s.session_id] > 10 * 60000)).slice(0, 3);
+  if (!due.length) return;
+  autoSyncBusy = true;
+  let done = 0;
+  try {
+    for (const s of due) {
+      autoSyncTried[s.session_id] = now;
+      const z = await zoomCall('sync_attendance', s.session_id);
+      if (!z.ok) { if (z.code && z.code !== 'zoom_error') break; continue; }      // Zoom not set up → stop trying this round
+      if (z.data.status !== 'imported') continue;
+      try {
+        const r = await rpc('admin_sync_attendance', { p_session: s.session_id });
+        if (!r.no_logs) { done++; logAdminAction('Synced Zoom attendance (automatic)', s.title, r); showToast(`📋 Attendance for "${s.title}" was fetched from Zoom and saved.`, 'success', 5000); }
+      } catch (_) { /* shown when the admin syncs by hand */ }
+    }
+  } finally { autoSyncBusy = false; }
+  if (done) await loadAdminData();
+}
+
 // ── Keep an open tab up to date: reload when the tab is looked at again ──
 // (e.g. a session cancelled or a fee changed in another tab / by another admin)
 async function refreshIfStale() {
@@ -2992,6 +3095,7 @@ async function refreshIfStale() {
 document.addEventListener('visibilitychange', refreshIfStale);
 window.addEventListener('focus', refreshIfStale);
 setInterval(refreshIfStale, 60000);
+setInterval(autoSyncAttendance, 120000);
 
 // ── Chart tooltips: any element with data-tip shows it on hover
 document.addEventListener('mouseover', e => {
